@@ -1,0 +1,2 @@
+https://pypi.org/project/customtkinter/
+https://pypi.org/project/Pillow/
