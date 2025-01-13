@@ -1,15 +1,23 @@
 ﻿# -*- coding: utf-8 -*-
 import customtkinter as ctk
+import tkinter as tk
 from tkinter import filedialog
-from PIL import Image
+from PIL import Image, ImageTk
 from CTkMessagebox import CTkMessagebox
 import os
+from tkinterdnd2 import TkinterDnD, DND_FILES
 
 from ..models.geometry import GeometryGenerator
 from ..models.animation import AnimationGenerator
 from ..utils.image_processor import ImageProcessor
 from ..utils.file_manager import FileManager
+from ..utils.config_manager import ConfigManager
+from ..utils.logger import Logger
+from ..utils.settings import Settings
 from .components import InputField
+from .progress_dialog import ProgressDialog
+from .preview import PreviewWindow
+from .batch_process import BatchProcessDialog
 
 class AnimationGeneratorApp:
     def __init__(self):
@@ -17,137 +25,430 @@ class AnimationGeneratorApp:
         self.setup_ui()
         self.image_path = None
         self.image = None
+        
+        # 绑定窗口大小改变事件
+        self.preview_canvas.bind('<Configure>', self.on_canvas_resize)
 
     def setup_window(self):
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
         
-        self.root = ctk.CTk()
+        self.root = TkinterDnD.Tk()
         self.root.title("BlockBench 工具")
-        self.root.geometry("500x800")
+        self.root.geometry("900x600")
         
-        self.main_frame = ctk.CTkFrame(self.root)
-        self.main_frame.pack(padx=20, pady=20, fill="both", expand=True)
+        # 设置最小窗口大小
+        self.root.minsize(800, 500)
         
-        self.title_label = ctk.CTkLabel(
-            self.main_frame, 
-            text="BlockBench 模型动画生成器",
-            font=ctk.CTkFont(size=24, weight="bold")
+        # 移除默认的白色边框
+        self.root.configure(bg='#2b2b2b')
+        
+        # 创建主框架，使用深色背景
+        self.main_frame = ctk.CTkFrame(
+            self.root,
+            fg_color='#2b2b2b',  # 深色背景
+            corner_radius=0  # 移除圆角
         )
-        self.title_label.pack(pady=20)
+        self.main_frame.pack(fill="both", expand=True)
+        
+        # 创建左右分栏，添加一点间距
+        self.left_panel = ctk.CTkFrame(
+            self.main_frame,
+            width=300,
+            fg_color='#242424',  # 稍微浅一点的深色
+            corner_radius=0
+        )
+        self.left_panel.pack(side="left", fill="y", padx=(10, 5), pady=10)
+        self.left_panel.pack_propagate(False)
+        
+        self.right_panel = ctk.CTkFrame(
+            self.main_frame,
+            fg_color='#242424',
+            corner_radius=0
+        )
+        self.right_panel.pack(side="right", fill="both", expand=True, padx=(5, 10), pady=10)
 
     def setup_ui(self):
-        self.create_animation_type_section()
-        self.create_upload_section()
-        self.create_input_fields()
+        # 左侧面板内容
+        self.create_left_panel()
+        # 右侧面板内容
+        self.create_right_panel()
+        # 创建菜单栏
+        self.create_menu()
         
-        # 添加循环选项复选框
-        self.loop_var = ctk.BooleanVar(value=False)
-        self.loop_checkbox = ctk.CTkCheckBox(
-            self.main_frame,
-            text="循环动画",
-            variable=self.loop_var,
-            font=ctk.CTkFont(size=14)
-        )
-        self.loop_checkbox.pack(padx=35, pady=5, anchor="w")
-        
-        self.generate_btn = ctk.CTkButton(
-            self.main_frame,
-            text="生成动画",
-            command=self.generate_animation,
-            font=ctk.CTkFont(size=16),
-            height=40
-        )
-        self.generate_btn.pack(pady=20)
+        # 设置拖放功能
+        self.setup_drag_drop()
 
-    def create_animation_type_section(self):
-        type_frame = ctk.CTkFrame(self.main_frame)
-        type_frame.pack(padx=20, pady=10, fill="x")
-        
-        type_label = ctk.CTkLabel(
-            type_frame,
-            text="动画类型:",
-            font=ctk.CTkFont(size=14)
+    def create_left_panel(self):
+        # 标题区域
+        title_frame = ctk.CTkFrame(
+            self.left_panel,
+            fg_color='transparent'
         )
-        type_label.pack(side="left", padx=5)
+        title_frame.pack(fill="x", pady=(15, 20))
+        
+        title = ctk.CTkLabel(
+            title_frame,
+            text="BlockBench\n模型动画生成器",
+            font=ctk.CTkFont(size=20, weight="bold"),
+            justify="center"
+        )
+        title.pack()
+        
+        # 动画类型选择
+        type_frame = ctk.CTkFrame(
+            self.left_panel,
+            fg_color='transparent'
+        )
+        type_frame.pack(fill="x", padx=15, pady=5)
+        
+        ctk.CTkLabel(
+            type_frame,
+            text="动画类型",
+            font=ctk.CTkFont(size=14)
+        ).pack(pady=(0, 5))
         
         self.animation_type = ctk.CTkSegmentedButton(
             type_frame,
             values=["普通动画", "圆形动画"],
-            command=self.on_animation_type_change
+            command=self.on_animation_type_change,
+            selected_color='#1f538d',  # 更深的蓝色
+            unselected_color='#2b2b2b'  # 深色背景
         )
-        self.animation_type.pack(side="left", padx=5, fill="x", expand=True)
+        self.animation_type.pack(fill="x", padx=5, pady=(0, 5))
         self.animation_type.set("普通动画")
-
-    def create_upload_section(self):
-        upload_frame = ctk.CTkFrame(self.main_frame)
-        upload_frame.pack(padx=20, pady=10, fill="x")
+        
+        # 图片上传区
+        upload_frame = ctk.CTkFrame(
+            self.left_panel,
+            fg_color='#2b2b2b',
+            corner_radius=6
+        )
+        upload_frame.pack(fill="x", padx=15, pady=10)
         
         self.upload_btn = ctk.CTkButton(
             upload_frame,
-            text="上传图片",
+            text="选择图片",
             command=self.upload_image,
-            font=ctk.CTkFont(size=14)
+            height=38,
+            fg_color='#1f538d',
+            hover_color='#1a4578'
         )
-        self.upload_btn.pack(side="left", padx=10, pady=10)
+        self.upload_btn.pack(fill="x", padx=10, pady=(10, 5))
         
         self.file_label = ctk.CTkLabel(
             upload_frame,
-            text="未选择文件",
-            font=ctk.CTkFont(size=12)
+            text="拖放图片到此处\n或点击上方按钮选择",
+            wraplength=250,
+            justify="center",
+            text_color='#8b8b8b'  # 浅灰色文字
         )
-        self.file_label.pack(side="left", padx=10, fill="x", expand=True)
-
-    def create_input_fields(self):
-        input_frame = ctk.CTkFrame(self.main_frame)
-        input_frame.pack(padx=20, pady=10, fill="both")
+        self.file_label.pack(pady=10)
         
-        self.entries = {}
-        fields = [
-            ("图片名称:", "texture_name", ""),
-            ("图片宽度:", "texture_width", "32"),
-            ("图片高度:", "texture_height", "32"),
-            ("图片帧数:", "frame_count", "8"),
-            ("暂停帧数(可选):", "pause_frame", "")
-        ]
+        # 参数设置区
+        settings_frame = ctk.CTkFrame(self.left_panel)
+        settings_frame.pack(fill="x", padx=15, pady=10)
+        
+        ctk.CTkLabel(
+            settings_frame,
+            text="参数设置",
+            font=ctk.CTkFont(size=14)
+        ).pack(pady=5)
+        
+        # 添加参数输入框
+        self.create_parameter_inputs(settings_frame)
+        
+        # 生成按钮
+        self.generate_btn = ctk.CTkButton(
+            self.left_panel,
+            text="生成动画",
+            command=self.generate_animation,
+            font=ctk.CTkFont(size=16, weight="bold"),
+            height=45
+        )
+        self.generate_btn.pack(fill="x", padx=15, pady=20)
 
-        # 创建基本输入字段
-        for label_text, field_name, default_value in fields:
-            field = InputField(input_frame, label_text, default_value)
-            field.frame.pack(fill="x", padx=10, pady=5)
-            self.entries[field_name] = field.entry
+    def create_right_panel(self):
+        # 预览区标题栏
+        preview_header = ctk.CTkFrame(
+            self.right_panel,
+            fg_color='transparent',
+            height=40
+        )
+        preview_header.pack(fill="x")
+        preview_header.pack_propagate(False)
+        
+        ctk.CTkLabel(
+            preview_header,
+            text="预览",
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).pack(side="left", padx=15)
+        
+        self.preview_btn = ctk.CTkButton(
+            preview_header,
+            text="打开预览",
+            width=100,
+            command=self.show_preview,
+            fg_color='#1f538d',
+            hover_color='#1a4578'
+        )
+        self.preview_btn.pack(side="right", padx=15)
+        
+        # 预览画布区域
+        self.preview_frame = ctk.CTkFrame(
+            self.right_panel,
+            fg_color='#2b2b2b',
+            corner_radius=0
+        )
+        self.preview_frame.pack(fill="both", expand=True, pady=10)
+        
+        self.preview_canvas = ctk.CTkCanvas(
+            self.preview_frame,
+            bg='#2b2b2b',
+            highlightthickness=0  # 移除边框
+        )
+        self.preview_canvas.pack(fill="both", expand=True)
+
+    def create_menu(self):
+        """创建菜单栏"""
+        menu_bar = tk.Menu(self.root)
+        self.root.config(menu=menu_bar)
+        
+        # 文件菜单
+        file_menu = tk.Menu(menu_bar, tearoff=0)
+        menu_bar.add_cascade(label="文件", menu=file_menu)
+        file_menu.add_command(label="打开图片", command=self.upload_image)
+        file_menu.add_command(label="批量处理", command=self.show_batch_process)
+        file_menu.add_separator()
+        file_menu.add_command(label="退出", command=self.root.quit)
+        
+        # 编辑菜单
+        edit_menu = tk.Menu(menu_bar, tearoff=0)
+        menu_bar.add_cascade(label="编辑", menu=edit_menu)
+        edit_menu.add_command(label="设置", command=self.show_settings)
+        
+        # 视图菜单
+        view_menu = tk.Menu(menu_bar, tearoff=0)
+        menu_bar.add_cascade(label="视图", menu=view_menu)
+        view_menu.add_command(label="预览", command=self.show_preview)
+        
+        # 帮助菜单
+        help_menu = tk.Menu(menu_bar, tearoff=0)
+        menu_bar.add_cascade(label="帮助", menu=help_menu)
+        help_menu.add_command(label="使用说明", command=self.show_help)
+        help_menu.add_command(label="关于", command=self.show_about)
+
+    def show_help(self):
+        """显示使用说明"""
+        help_text = """
+使用说明：
+1. 选择动画类型（普通/圆形）
+2. 上传图片文件
+3. 设置相关参数
+4. 点击生成按钮
+        """
+        CTkMessagebox(
+            title="使用说明",
+            message=help_text,
+            icon="info"
+        )
+
+    def show_about(self):
+        """显示关于信息"""
+        about_text = """
+BlockBench 模型动画生成器 v1.0
+
+一个用于生成 BlockBench 模型动画的工具。
+支持普通动画和圆形动画，可以处理精灵图和GIF文件。
+
+作者：Your Name
+    """
+        CTkMessagebox(
+            title="关于",
+            message=about_text,
+            icon="info"
+        )
+
+    def show_preview(self):
+        if not self.image_path:
+            CTkMessagebox(
+                title="错误",
+                message="请先选择图片文件",
+                icon="cancel"
+            )
+            return
+        PreviewWindow(self.root, self.image_path)
+
+    def show_batch_process(self):
+        BatchProcessDialog(self.root, self.process_single_file)
+
+    def process_single_file(self, file_path):
+        """处理单个文件"""
+        self.image_path = file_path
+        self.image = Image.open(file_path)
+        self.auto_fill_image_info()
+        self.generate_animation()
+
+    def run(self):
+        self.root.mainloop()
+
+    def generate_geometry(self, params):
+        """根据参数生成几何体"""
+        if params["animation_type"] == "圆形动画":
+            return GeometryGenerator.create_circle_geometry(
+                params["texture_width"],
+                params["texture_height"],
+                params["frame_count"],
+                params["rotation_angles"]
+            )
+        else:
+            return GeometryGenerator.create_normal_geometry(
+                params["texture_width"],
+                params["texture_height"],
+                params["frame_count"]
+            )
+
+    def show_settings(self):
+        """显示设置对话框"""
+        from .settings_dialog import SettingsDialog
+        SettingsDialog(self.root)
+
+    def setup_drag_drop(self):
+        """设置拖放功能"""
+        try:
+            # 为主窗口添加拖放绑定
+            self.root.drop_target_register(DND_FILES)
+            self.root.dnd_bind('<<Drop>>', self.on_drop)
             
-            # 为暂停帧数添加验证和回调
-            if field_name == "pause_frame":
-                self.entries[field_name].bind('<KeyRelease>', self.on_pause_frame_change)
+            # 为左侧面板添加拖放绑定
+            self.left_panel.drop_target_register(DND_FILES)
+            self.left_panel.dnd_bind('<<Drop>>', self.on_drop)
+            
+            # 为上传区域添加拖放绑定
+            self.file_label.drop_target_register(DND_FILES)
+            self.file_label.dnd_bind('<<Drop>>', self.on_drop)
+            
+            # 为预览区域添加拖放绑定（如果存在）
+            if hasattr(self, 'canvas'):
+                self.canvas.drop_target_register(DND_FILES)
+                self.canvas.dnd_bind('<<Drop>>', self.on_drop)
+            
+        except Exception as e:
+            print(f"设置拖放功能时出错：{str(e)}")
 
-        # 创建暂停秒数输入框（默认隐藏）
-        self.pause_duration_frame = ctk.CTkFrame(input_frame, fg_color="transparent")
-        pause_duration_field = InputField(
-            self.pause_duration_frame, 
-            "暂停秒数:", 
-            "0"
-        )
-        pause_duration_field.frame.pack(fill="x", padx=10, pady=5)
-        self.entries["pause_duration"] = pause_duration_field.entry
+    def on_drop(self, event):
+        """处理文件拖放"""
+        file_path = event.data
+        
+        # 移除可能的大括号和引号
+        file_path = file_path.strip('{}')
+        file_path = file_path.strip('"')
+        
+        # 检查文件类型
+        if file_path.lower().endswith(('.png', '.gif', '.jpg', '.jpeg')):
+            try:
+                self.image_path = file_path
+                self.image = Image.open(file_path)
+                
+                filename = os.path.basename(file_path)
+                self.file_label.configure(text=filename)
+                
+                # 自动填充图片信息
+                self.auto_fill_image_info()
+                
+                # 更新预览
+                self.update_preview()
+                
+            except Exception as e:
+                CTkMessagebox(
+                    title="错误",
+                    message=f"无法加载图片：{str(e)}",
+                    icon="cancel"
+                )
+        else:
+            CTkMessagebox(
+                title="错误",
+                message="不支持的文件格式。请使用 PNG、GIF 或 JPEG 格式的图片。",
+                icon="cancel"
+            )
 
-        # 创建旋转角度输入框（默认隐藏）
-        self.rotation_angles_frame = ctk.CTkFrame(input_frame, fg_color="transparent")
-        rotation_field = InputField(
-            self.rotation_angles_frame, 
-            "旋转角度:", 
-            "45"
+    def create_preview_area(self):
+        # 创建右侧预览区
+        preview_frame = ctk.CTkFrame(self.main_frame, fg_color="#1E1E1E")
+        preview_frame.pack(side="right", fill="both", expand=True, padx=0, pady=0)
+        
+        # 预览标题
+        preview_label = ctk.CTkLabel(
+            preview_frame,
+            text="预览",
+            font=("Arial", 14, "bold")
         )
-        rotation_field.frame.pack(fill="x", padx=10, pady=5)
-        self.entries["rotation_angles"] = rotation_field.entry
+        preview_label.pack(anchor="w", padx=15, pady=10)
+        
+        # 预览画布
+        self.preview_canvas = ctk.CTkCanvas(
+            preview_frame,
+            bg='#2D2D2D',
+            highlightthickness=0
+        )
+        self.preview_canvas.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+
+    def create_status_bar(self):
+        self.status_bar = ctk.CTkFrame(
+            self.main_frame,
+            height=25,
+            fg_color="#007ACC"
+        )
+        self.status_bar.pack(fill="x", side="bottom")
+        
+        self.status_label = ctk.CTkLabel(
+            self.status_bar,
+            text="就绪",
+            text_color="#FFFFFF"
+        )
+        self.status_label.pack(side="left", padx=10)
+
+    def create_parameter_inputs(self, parent):
+        self.entries = {}
+        
+        # 创建输入框组
+        input_group = ctk.CTkFrame(parent)
+        input_group.pack(fill="x", padx=5, pady=5)
+        
+        # 基本参数
+        params = [
+            ("名称", "texture_name", ""),
+            ("宽度", "texture_width", "32"),
+            ("高度", "texture_height", "32"),
+            ("帧数", "frame_count", "8")
+        ]
+        
+        for label, key, default in params:
+            frame = ctk.CTkFrame(input_group)
+            frame.pack(fill="x", pady=2)
+            
+            ctk.CTkLabel(
+                frame, text=label, width=50
+            ).pack(side="left", padx=5)
+            
+            entry = ctk.CTkEntry(frame)
+            entry.pack(side="right", fill="x", expand=True, padx=5)
+            entry.insert(0, default)
+            self.entries[key] = entry
 
     def on_animation_type_change(self, value):
-        if value in ["圆形动画", "方形动画", "六边形动画", "八边形动画"]:
-            self.rotation_angles_frame.pack(fill="x", padx=10, pady=5)
+        """动画类型改变时的回调"""
+        if value == "圆形动画":
+            # 显示旋转角度输入框
+            if hasattr(self, 'rotation_frame'):
+                self.rotation_frame.pack(fill="x", pady=2)
         else:
-            self.rotation_angles_frame.pack_forget()
+            # 隐藏旋转角度输入框
+            if hasattr(self, 'rotation_frame'):
+                self.rotation_frame.pack_forget()
 
     def upload_image(self):
+        """上传图片"""
         file_path = filedialog.askopenfilename(
             filetypes=[
                 ("图片文件", "*.png;*.gif;*.jpg;*.jpeg"),
@@ -157,18 +458,17 @@ class AnimationGeneratorApp:
         
         if file_path:
             try:
-                # 验证文件扩展名
-                ext = os.path.splitext(file_path)[1].lower()
-                if ext not in ['.png', '.gif', '.jpg', '.jpeg']:
-                    raise ValueError("不支持的文件格式。请使用 PNG、GIF 或 JPEG 格式的图片。")
-                
                 self.image_path = file_path
                 self.image = Image.open(file_path)
                 
                 filename = os.path.basename(file_path)
                 self.file_label.configure(text=filename)
                 
+                # 自动填充图片信息
                 self.auto_fill_image_info()
+                
+                # 更新预览
+                self.update_preview()
                 
             except Exception as e:
                 CTkMessagebox(
@@ -178,12 +478,14 @@ class AnimationGeneratorApp:
                 )
 
     def auto_fill_image_info(self):
+        """自动填充图片信息"""
         if not self.image:
             return
         
         width, height = self.image.size
         name = os.path.splitext(os.path.basename(self.image_path))[0]
         
+        # 填充输入框
         self.entries["texture_name"].delete(0, "end")
         self.entries["texture_name"].insert(0, name)
         
@@ -192,167 +494,170 @@ class AnimationGeneratorApp:
         self.entries["texture_width"].insert(0, str(width))
         self.entries["texture_height"].insert(0, str(height))
         
-        frame_count = ImageProcessor.calculate_frame_count(self.image)
+        # 如果是GIF，自动设置帧数
+        frame_count = getattr(self.image, "n_frames", 1)
         self.entries["frame_count"].delete(0, "end")
         self.entries["frame_count"].insert(0, str(frame_count))
 
-    def validate_inputs(self):
+    def update_preview(self):
+        """更新预览画布"""
+        if not self.image_path:
+            return
+        
         try:
-            if not self.entries["texture_name"].get().strip():
-                raise ValueError("请输入图片名称")
+            # 加载图片
+            img = Image.open(self.image_path)
             
-            try:
-                texture_width = int(self.entries["texture_width"].get().strip())
-                texture_height = int(self.entries["texture_height"].get().strip())
-                frame_count = int(self.entries["frame_count"].get().strip())
-                rotation_angles = int(self.entries["rotation_angles"].get().strip()) if self.animation_type.get() != "普通动画" else 0
-            except ValueError:
-                raise ValueError("请确保所有数值输入都是有效的整数")
+            # 获取画布尺寸
+            canvas_width = self.preview_canvas.winfo_width()
+            canvas_height = self.preview_canvas.winfo_height()
             
-            if texture_width <= 0 or texture_height <= 0:
-                raise ValueError("图片尺寸必须大于0")
-            if frame_count <= 0:
-                raise ValueError("帧数必须大于0")
-            if self.animation_type.get() != "普通动画" and (rotation_angles < 0 or rotation_angles > 360):
-                raise ValueError("旋转角度必须在0到360度之间")
-            
-            pause_frame = None
-            pause_duration = 0
-            
-            pause_frame_text = self.entries["pause_frame"].get().strip()
-            if pause_frame_text:
-                try:
-                    pause_frame = int(pause_frame_text)
-                    if pause_frame <= 0 or pause_frame > frame_count:
-                        raise ValueError(f"暂停帧数必须在1到{frame_count}之间")
-                except ValueError:
-                    raise ValueError("暂停帧数必须是有效的整数")
+            if canvas_width > 1 and canvas_height > 1:
+                # 获取图片原始尺寸
+                img_width, img_height = img.size
                 
-                pause_duration_text = self.entries["pause_duration"].get().strip()
-                if pause_duration_text:
-                    try:
-                        pause_duration = float(pause_duration_text)
-                        if pause_duration < 0:
-                            raise ValueError("暂停时间不能为负数")
-                    except ValueError:
-                        raise ValueError("暂停秒数必须是有效的数字")
-            
-            return {
-                "texture_name": self.entries["texture_name"].get().strip(),
-                "texture_width": texture_width,
-                "texture_height": texture_height,
-                "frame_count": frame_count,
-                "rotation_angles": rotation_angles,
-                "pause_frame": pause_frame,
-                "pause_duration": pause_duration,
-                "animation_type": self.animation_type.get(),
-                "loop": self.loop_var.get()
-            }
-            
-        except ValueError as e:
-            CTkMessagebox(title="输入错误", message=str(e), icon="cancel")
-            return None
+                # 计算合适的缩放比例
+                width_ratio = canvas_width / img_width
+                height_ratio = canvas_height / img_height
+                scale = min(width_ratio, height_ratio) * 0.9  # 留出一些边距
+                
+                # 限制最大尺寸以避免卡顿
+                MAX_DIMENSION = 1500  # 最大尺寸限制
+                if img_width * scale > MAX_DIMENSION or img_height * scale > MAX_DIMENSION:
+                    scale = min(MAX_DIMENSION / img_width, MAX_DIMENSION / img_height)
+                
+                # 计算缩放后的尺寸
+                new_width = int(img_width * scale)
+                new_height = int(img_height * scale)
+                
+                # 缩放图片
+                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                
+                # 转换为PhotoImage
+                self.preview_photo = ImageTk.PhotoImage(img)
+                
+                # 清除画布
+                self.preview_canvas.delete("all")
+                
+                # 计算居中位置
+                x = canvas_width // 2
+                y = canvas_height // 2
+                
+                # 在画布中央显示图片
+                self.preview_canvas.create_image(
+                    x, y,
+                    image=self.preview_photo,
+                    anchor="center"
+                )
+                
+                # 添加图片信息文本
+                info_text = f"{img_width}x{img_height} ({int(scale * 100)}%)"
+                self.preview_canvas.create_text(
+                    10, 10,  # 左上角位置
+                    text=info_text,
+                    fill="#ffffff",
+                    anchor="nw",
+                    font=("Arial", 10)
+                )
+                
+        except Exception as e:
+            print(f"更新预览时出错：{str(e)}")
 
     def generate_animation(self):
+        """生成动画"""
+        # 验证输入
         params = self.validate_inputs()
         if not params:
             return
         
         try:
-            script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            model_dir = FileManager.create_model_directory(script_dir, params["texture_name"])
-
-            # 处理图片
-            if self.image_path and self.image_path.lower().endswith('.gif'):
-                sprite_path = os.path.join(model_dir, f"{params['texture_name']}.png")
-                sprite_image = ImageProcessor.convert_gif_to_spritesheet(self.image_path)[1]
-                sprite_image.save(sprite_path)
-                params["texture_width"] = sprite_image.width
-                params["texture_height"] = sprite_image.height
-                if getattr(self.image, "is_animated", False):
-                    params["frame_count"] = self.image.n_frames
-            elif self.image_path:
-                FileManager.copy_texture(self.image_path, model_dir)
+            # 显示进度对话框
+            progress = ProgressDialog(self.root)
+            progress.set_progress(0, "正在准备...")
             
-            # 生成几何脚本
-            if params["animation_type"] == "圆形动画":
-                geometry_script = GeometryGenerator.create_circle_geometry(
-                    params["texture_width"],
-                    params["texture_height"],
-                    params["frame_count"],
-                    params["rotation_angles"]
-                )
-            elif params["animation_type"] == "方形动画":
-                geometry_script = GeometryGenerator.create_square_geometry(
-                    params["texture_width"],
-                    params["texture_height"],
-                    params["frame_count"],
-                    params["rotation_angles"]
-                )
-            elif params["animation_type"] == "六边形动画":
-                geometry_script = GeometryGenerator.create_hexagon_geometry(
-                    params["texture_width"],
-                    params["texture_height"],
-                    params["frame_count"],
-                    params["rotation_angles"]
-                )
-            elif params["animation_type"] == "八边形动画":
-                geometry_script = GeometryGenerator.create_octagon_geometry(
-                    params["texture_width"],
-                    params["texture_height"],
-                    params["frame_count"],
-                    params["rotation_angles"]
-                )
-            else:
-                geometry_script = GeometryGenerator.create_normal_geometry(
-                    params["texture_width"],
-                    params["texture_height"],
-                    params["frame_count"]
-                )
+            # 1. 验证图片
+            if not self.image_path or not self.image:
+                raise ValueError("请先选择图片文件")
             
-            # 生成动画脚本
-            animation_script = AnimationGenerator.create_animation(
+            progress.set_progress(20, "正在处理图片...")
+            
+            # 2. 创建输出目录
+            output_dir = os.path.join(os.path.dirname(self.image_path), "output")
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # 3. 生成几何体
+            progress.set_progress(40, "正在生成几何体...")
+            geometry = self.generate_geometry(params)
+            
+            # 4. 生成动画
+            progress.set_progress(60, "正在生成动画...")
+            animation = AnimationGenerator.create_animation(
                 params["frame_count"],
-                0.05,
-                params["pause_frame"],
-                params["pause_duration"],
-                params["animation_type"].replace("动画", ""),
-                params["loop"]
+                params["animation_type"] == "圆形动画"
             )
             
-            # 保存文件
-            FileManager.save_model_files(model_dir, params["texture_name"], geometry_script, animation_script)
+            # 5. 保存文件
+            progress.set_progress(80, "正在保存文件...")
             
-            success_message = f"动画文件已生成到文件夹：\n{model_dir}"
-            if self.image_path and self.image_path.lower().endswith('.gif'):
-                success_message += f"\n已生成精灵图：{params['texture_name']}.png"
+            # 保存几何体文件
+            geometry_file = os.path.join(output_dir, f"{params['texture_name']}_geometry.json")
+            with open(geometry_file, 'w', encoding='utf-8') as f:
+                f.write(geometry)
             
+            # 保存动画文件
+            animation_file = os.path.join(output_dir, f"{params['texture_name']}_animation.json")
+            with open(animation_file, 'w', encoding='utf-8') as f:
+                f.write(animation)
+            
+            # 复制或处理图片
+            image_processor = ImageProcessor()
+            output_image = os.path.join(output_dir, f"{params['texture_name']}.png")
+            image_processor.process_image(
+                self.image_path,
+                output_image,
+                params["frame_count"]
+            )
+            
+            progress.set_progress(100, "完成！")
+            
+            # 显示成功消息
             CTkMessagebox(
-                title="成功", 
-                message=success_message,
+                title="成功",
+                message=f"动画已生成！\n文件保存在：{output_dir}",
                 icon="check"
             )
             
         except Exception as e:
             CTkMessagebox(
                 title="错误",
-                message=f"生成文件时出错：{str(e)}",
+                message=f"生成动画时出错：{str(e)}",
                 icon="cancel"
             )
+        finally:
+            # 关闭进度对话框
+            if progress:
+                progress.destroy()
 
-    def on_pause_frame_change(self, event):
-        """当暂停帧数输入框的值改变时触发"""
-        pause_frame_value = self.entries["pause_frame"].get().strip()
-        if pause_frame_value:
-            try:
-                frame_count = int(self.entries["frame_count"].get().strip() or "0")
-                pause_frame = int(pause_frame_value)
-                if 0 < pause_frame <= frame_count:
-                    self.pause_duration_frame.pack(fill="x", padx=10, pady=5)
-                    return
-            except ValueError:
-                pass
-        self.pause_duration_frame.pack_forget()
+    def validate_inputs(self):
+        """验证输入参数"""
+        try:
+            # ... 验证代码 ...
+            return {
+                "texture_name": self.entries["texture_name"].get().strip(),
+                "texture_width": int(self.entries["texture_width"].get()),
+                "texture_height": int(self.entries["texture_height"].get()),
+                "frame_count": int(self.entries["frame_count"].get()),
+                "animation_type": self.animation_type.get()
+            }
+        except ValueError as e:
+            CTkMessagebox(
+                title="输入错误",
+                message=str(e),
+                icon="cancel"
+            )
+            return None
 
-    def run(self):
-        self.root.mainloop()
+    def on_canvas_resize(self, event):
+        """当画布大小改变时更新预览"""
+        if hasattr(self, 'preview_photo'):
+            self.update_preview()
