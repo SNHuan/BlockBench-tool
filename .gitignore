@@ -32,9 +32,6 @@ env/
 *.swo
 
 # Project specific
+cache/
 output/
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.json 
+*.log 

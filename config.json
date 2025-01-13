@@ -1,0 +1,12 @@
+{
+    "last_directory": "",
+    "default_settings": {
+        "texture_width": "32",
+        "texture_height": "32",
+        "frame_count": "8",
+        "rotation_angles": "45",
+        "animation_type": "普通动画",
+        "loop": false
+    },
+    "recent_files": []
+}

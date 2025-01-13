@@ -1,786 +1,666 @@
 import customtkinter as ctk
-import cv2
-import numpy as np
-from PIL import Image, ImageTk
-from CTkMessagebox import CTkMessagebox
-from tkinter import filedialog
+from PIL import Image, ImageTk, ImageEnhance, ImageOps
 import os
-from tkinterdnd2 import DND_FILES
+from CTkMessagebox import CTkMessagebox
+import numpy as np
+import colorsys
 
-class PreviewWindow:
-    def __init__(self, parent, image_path):
-        self.dialog = ctk.CTkToplevel(parent)
-        self.dialog.title("预览")
-        self.dialog.geometry("1000x800")
+class ImageEditorWindow:
+    def __init__(self, parent, image_path, on_image_changed=None):
+        self.window = ctk.CTkToplevel(parent)
+        self.window.title("图像编辑器")
+        self.window.minsize(500, 400)
         
-        # 初始化播放控制变量（移到最前面）
-        self.is_playing = False
-        self.current_speed = 1.0
+        # 保存回调函数
+        self.on_image_changed = on_image_changed
+        
+        # 创建缓存目录
+        self.cache_dir = os.path.join(os.getcwd(), "cache")
+        os.makedirs(self.cache_dir, exist_ok=True)
+        
+        # 保存原始图片和路径
+        self.image_path = image_path
+        self.original_image = Image.open(image_path)
+        self.image = self.original_image.copy()
         self.current_frame = 0
+        self.is_playing = False
+        self.frame_delay = 100
+        self.hue_shift = 0
+        self.zoom_level = 1
+        self.brightness = 1.0  # 初始化亮度
+        self.contrast = 1.0  # 初始化对比度
+        
+        # 初始化播放相关属性
+        self.current_frame = 0
+        self.is_playing = False
+        self.frame_delay = 100
         self.animation_after_id = None
-        self.is_gif = False
         
         # 创建主框架
-        self.main_frame = ctk.CTkFrame(self.dialog)
-        self.main_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        main_frame = ctk.CTkFrame(self.window)
+        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
         
         # 创建工具栏
-        self.create_toolbar()
+        toolbar = ctk.CTkFrame(main_frame)
+        toolbar.pack(fill="x", pady=(0, 10))
         
-        # 创建预览区域
-        self.preview_frame = ctk.CTkFrame(self.main_frame, fg_color="#2b2b2b")
-        self.preview_frame.pack(fill="both", expand=True, padx=5, pady=5)
+        # 缩放控制
+        self.zoom_frame = ctk.CTkFrame(toolbar)  # 确保 zoom_frame 被定义
+        self.zoom_frame.pack(side="left", padx=5)
         
+        ctk.CTkLabel(self.zoom_frame, text="缩放:").pack(side="left", padx=5)
+        for zoom in [1, 2, 4, 8]:
+            btn = ctk.CTkButton(
+                self.zoom_frame,
+                text=f"{zoom}x",
+                width=40,
+                command=lambda z=zoom: self.set_zoom(z)
+            )
+            btn.pack(side="left", padx=2)
+        
+        # 图片信息显示
+        self.info_label = ctk.CTkLabel(toolbar, text="")
+        self.info_label.pack(side="right", padx=10)
+        
+        # 创建预览区域（带滚动条）
+        preview_frame = ctk.CTkFrame(main_frame)
+        preview_frame.pack(fill="both", expand=True)
+        
+        # 添加滚动条
+        self.h_scroll = ctk.CTkScrollbar(preview_frame, orientation="horizontal")
+        self.h_scroll.pack(side="bottom", fill="x")
+        
+        self.v_scroll = ctk.CTkScrollbar(preview_frame, orientation="vertical")
+        self.v_scroll.pack(side="right", fill="y")
+        
+        # 创建预览画布
         self.canvas = ctk.CTkCanvas(
-            self.preview_frame,
-            bg='#2b2b2b',
-            highlightthickness=0
+            preview_frame,
+            bg='gray90',
+            highlightthickness=0,
+            xscrollcommand=self.h_scroll.set,
+            yscrollcommand=self.v_scroll.set
         )
         self.canvas.pack(fill="both", expand=True)
         
-        # 初始化默认值
-        self.DEFAULT_VALUES = {
-            'scale': 1.0,
-            'brightness': 0,
-            'contrast': 1.0,
-            'rotation': 0,
-            'saturation': 1.0,
-            'sharpness': 1.0,
-            'hue': 0
-        }
+        # 配置滚动条
+        self.h_scroll.configure(command=self.canvas.xview)
+        self.v_scroll.configure(command=self.canvas.yview)
         
-        # 图像处理变量
-        self.image_path = image_path
-        self.scale = self.DEFAULT_VALUES['scale']
-        self.brightness = self.DEFAULT_VALUES['brightness']
-        self.contrast = self.DEFAULT_VALUES['contrast']
-        self.rotation = self.DEFAULT_VALUES['rotation']
-        self.saturation = self.DEFAULT_VALUES['saturation']
-        self.sharpness = self.DEFAULT_VALUES['sharpness']
-        self.hue = self.DEFAULT_VALUES['hue']
-        
-        # 鼠标事件绑定
-        self.canvas.bind('<Configure>', self.on_resize)
-        self.canvas.bind('<MouseWheel>', self.on_mousewheel)
-        self.canvas.bind('<Control-MouseWheel>', self.on_ctrl_mousewheel)
-        
-        # 创建信息面板
-        self.create_info_panel()
-        
-        # 设置快捷键
-        self.setup_shortcuts()
-        
-        # 设置拖放功能（移到这里）
-        self.setup_drag_drop()
-        
-        # 加载图片
-        self.load_image()
-        
-        # 窗口居中
-        self.center_window()
-        
-    def create_toolbar(self):
-        """创建工具栏"""
-        # 创建顶部工具栏框架
-        self.toolbar = ctk.CTkFrame(self.main_frame, fg_color="#1f1f1f", height=40)
-        self.toolbar.pack(fill="x", padx=5, pady=(5, 0))
-        self.toolbar.pack_propagate(False)  # 固定高度
+        # 创建控制栏
+        control_frame = ctk.CTkFrame(main_frame)
+        control_frame.pack(fill="x", pady=(10, 0))
         
         # 左侧控制区
-        left_frame = ctk.CTkFrame(self.toolbar, fg_color="transparent")
-        left_frame.pack(side="left", fill="x", expand=True, padx=10, pady=5)
+        left_controls = ctk.CTkFrame(control_frame)
+        left_controls.pack(side="left", fill="x", expand=True)
         
-        # 缩放显示
-        zoom_label = ctk.CTkLabel(
-            left_frame,
-            text="缩放:",
-            font=("Arial", 12)
-        )
-        zoom_label.pack(side="left", padx=(0, 5))
+        # 添加播放控制区域（如果是GIF）
+        if hasattr(self.image, "n_frames"):
+            play_frame = ctk.CTkFrame(left_controls)
+            play_frame.pack(side="left", padx=5)
+            
+            # 播放控制按钮
+            self.play_btn = ctk.CTkButton(
+                play_frame,
+                text="播放",
+                width=60,
+                command=self.toggle_play,
+                fg_color='#1f538d',
+                hover_color='#1a4578'
+            )
+            self.play_btn.pack(side="left", padx=2)
+            
+            # 帧控制按钮
+            self.prev_btn = ctk.CTkButton(
+                play_frame,
+                text="◀",
+                width=30,
+                command=self.prev_frame,
+                fg_color='#1f538d',
+                hover_color='#1a4578'
+            )
+            self.prev_btn.pack(side="left", padx=2)
+            
+            self.next_btn = ctk.CTkButton(
+                play_frame,
+                text="▶",
+                width=30,
+                command=self.next_frame,
+                fg_color='#1f538d',
+                hover_color='#1a4578'
+            )
+            self.next_btn.pack(side="left", padx=2)
+            
+            # 帧计数器
+            self.frame_label = ctk.CTkLabel(
+                play_frame,
+                text=f"帧: 1/{self.image.n_frames}"
+            )
+            self.frame_label.pack(side="left", padx=5)
+            
+            # 播放速度控制
+            speed_frame = ctk.CTkFrame(play_frame)
+            speed_frame.pack(side="left", padx=5)
+            
+            ctk.CTkLabel(speed_frame, text="速度:").pack(side="left")
+            self.speed_entry = ctk.CTkEntry(speed_frame, width=50)
+            self.speed_entry.insert(0, "1.0")
+            self.speed_entry.pack(side="left", padx=2)
+            ctk.CTkLabel(speed_frame, text="x").pack(side="left")
+            
+            # 绑定速度输入框的回车事件
+            self.speed_entry.bind('<Return>', self.update_speed)
+            self.speed_entry.bind('<FocusOut>', self.update_speed)
         
-        self.zoom_label = ctk.CTkLabel(
-            left_frame,
-            text="100%",
-            width=50,
-            font=("Arial", 12)
-        )
-        self.zoom_label.pack(side="left", padx=(0, 20))
+        # 编辑控制
+        edit_frame = ctk.CTkFrame(left_controls)
+        edit_frame.pack(side="left", padx=5)
         
-        # 创建滑块控制区
-        sliders_frame = ctk.CTkFrame(self.main_frame, fg_color="#1f1f1f", height=40)
-        sliders_frame.pack(fill="x", padx=5, pady=(5, 0))
-        sliders_frame.pack_propagate(False)
-        
-        # 亮度控制
-        bright_frame = ctk.CTkFrame(sliders_frame, fg_color="transparent")
-        bright_frame.pack(side="left", expand=True, padx=10, pady=5)
-        
-        ctk.CTkLabel(
-            bright_frame,
-            text="亮度:",
-            font=("Arial", 12)
-        ).pack(side="left", padx=(0, 5))
-        
+        # 亮度调整
+        ctk.CTkLabel(edit_frame, text="亮度:").pack(side="left", padx=5)
         self.brightness_slider = ctk.CTkSlider(
-            bright_frame,
-            from_=-100,
-            to=100,
-            number_of_steps=200,
-            command=self.on_brightness_change,
-            width=150
-        )
-        self.brightness_slider.pack(side="left")
-        self.brightness_slider.set(0)
-        
-        # 对比度控制
-        contrast_frame = ctk.CTkFrame(sliders_frame, fg_color="transparent")
-        contrast_frame.pack(side="left", expand=True, padx=10, pady=5)
-        
-        ctk.CTkLabel(
-            contrast_frame,
-            text="对比度:",
-            font=("Arial", 12)
-        ).pack(side="left", padx=(0, 5))
-        
-        self.contrast_slider = ctk.CTkSlider(
-            contrast_frame,
+            edit_frame,
             from_=0.5,
-            to=1.5,
-            number_of_steps=100,
-            command=self.on_contrast_change,
-            width=150
+            to=2.0,
+            width=100,
+            command=self.update_brightness
         )
-        self.contrast_slider.pack(side="left")
+        self.brightness_slider.pack(side="left", padx=5)
+        self.brightness_slider.set(1.0)
+        
+        # 对比度调整
+        ctk.CTkLabel(edit_frame, text="对比度:").pack(side="left", padx=5)
+        self.contrast_slider = ctk.CTkSlider(
+            edit_frame,
+            from_=0.5,
+            to=2.0,
+            width=100,
+            command=self.update_contrast
+        )
+        self.contrast_slider.pack(side="left", padx=5)
         self.contrast_slider.set(1.0)
         
-        # 饱和度控制
-        saturation_frame = ctk.CTkFrame(sliders_frame, fg_color="transparent")
-        saturation_frame.pack(side="left", expand=True, padx=10, pady=5)
-        
-        ctk.CTkLabel(
-            saturation_frame,
-            text="饱和度:",
-            font=("Arial", 12)
-        ).pack(side="left", padx=(0, 5))
-        
-        self.saturation_slider = ctk.CTkSlider(
-            saturation_frame,
-            from_=0.0,
-            to=2.0,
-            number_of_steps=100,
-            command=self.on_saturation_change,
-            width=150
-        )
-        self.saturation_slider.pack(side="left")
-        self.saturation_slider.set(1.0)
-        
-        # 色相控制
-        hue_frame = ctk.CTkFrame(sliders_frame, fg_color="transparent")
-        hue_frame.pack(side="left", expand=True, padx=10, pady=5)
-        
-        ctk.CTkLabel(
-            hue_frame,
-            text="色相:",
-            font=("Arial", 12)
-        ).pack(side="left", padx=(0, 5))
-        
+        # 色相调整
+        ctk.CTkLabel(edit_frame, text="色相:").pack(side="left", padx=5)
         self.hue_slider = ctk.CTkSlider(
-            hue_frame,
-            from_=-180,  # 色相范围 -180 到 180 度
-            to=180,
-            number_of_steps=360,
-            command=self.on_hue_change,
-            width=150
+            edit_frame,
+            from_=0,
+            to=360,
+            width=100,
+            command=self.update_hue
         )
-        self.hue_slider.pack(side="left")
+        self.hue_slider.pack(side="left", padx=5)
         self.hue_slider.set(0)
         
-        # 在饱和度控制后添加锐化控制
-        sharpness_frame = ctk.CTkFrame(sliders_frame, fg_color="transparent")
-        sharpness_frame.pack(side="left", expand=True, padx=10, pady=5)
+        # 右侧控制区
+        right_controls = ctk.CTkFrame(control_frame)
+        right_controls.pack(side="right", fill="x", padx=10)
         
-        ctk.CTkLabel(
-            sharpness_frame,
-            text="锐化:",
-            font=("Arial", 12)
-        ).pack(side="left", padx=(0, 5))
-        
-        self.sharpness_slider = ctk.CTkSlider(
-            sharpness_frame,
-            from_=0.0,
-            to=2.0,
-            number_of_steps=100,
-            command=self.on_sharpness_change,
-            width=150
+        self.apply_btn = ctk.CTkButton(
+            right_controls,
+            text="应用",
+            width=60,
+            command=self.apply_changes
         )
-        self.sharpness_slider.pack(side="left")
-        self.sharpness_slider.set(1.0)
-        
-        # 右侧按钮区
-        right_frame = ctk.CTkFrame(self.toolbar, fg_color="transparent")
-        right_frame.pack(side="right", padx=10, pady=5)
-        
-        # 旋转按钮
-        ctk.CTkButton(
-            right_frame,
-            text="↺",
-            width=40,
-            height=30,
-            command=lambda: self.rotate(-90)
-        ).pack(side="left", padx=2)
-        
-        ctk.CTkButton(
-            right_frame,
-            text="↻",
-            width=40,
-            height=30,
-            command=lambda: self.rotate(90)
-        ).pack(side="left", padx=2)
+        self.apply_btn.pack(side="left", padx=5)
         
         # 重置按钮
-        ctk.CTkButton(
-            right_frame,
+        self.reset_btn = ctk.CTkButton(
+            right_controls,
             text="重置",
             width=60,
-            height=30,
-            command=self.reset_all
-        ).pack(side="left", padx=2)
-        
-        # 保存按钮
-        ctk.CTkButton(
-            right_frame,
-            text="保存",
-            width=60,
-            height=30,
-            command=self.save_image
-        ).pack(side="left", padx=2)
-        
-        # 添加播放控制区
-        play_frame = ctk.CTkFrame(self.toolbar, fg_color="transparent")
-        play_frame.pack(side="right", padx=10)
-        
-        self.play_btn = ctk.CTkButton(
-            play_frame,
-            text="▶",
-            width=40,
-            height=30,
-            command=self.toggle_play
+            command=self.reset_changes
         )
-        self.play_btn.pack(side="left", padx=2)
+        self.reset_btn.pack(side="left", padx=5)
         
-        # 添加帧率控制
-        self.speed_var = ctk.StringVar(value="1x")
-        self.speed_menu = ctk.CTkOptionMenu(
-            play_frame,
-            values=["0.5x", "1x", "2x"],
-            variable=self.speed_var,
-            width=60,
-            command=self.on_speed_change
-        )
-        self.speed_menu.pack(side="left", padx=2)
+        # 绑定事件
+        self.canvas.bind('<Configure>', self.on_canvas_resize)
+        self.canvas.bind('<ButtonPress-1>', self.start_pan)
+        self.canvas.bind('<B1-Motion>', self.pan)
+        self.canvas.bind('<MouseWheel>', self.zoom_wheel)
         
-    def load_image(self):
-        """加载图片"""
+        # 初始显示
+        self.update_preview()
+        self.update_info()
+        
+        # 初始化帧计数器
+        if hasattr(self.image, "n_frames"):
+            self.frame_label.configure(text=f"帧: 1/{self.image.n_frames}")
+        
+        # 设置初始缩放按钮状态
+        self.update_zoom_buttons()
+        
+        # 绑定窗口关闭事件
+        self.window.protocol("WM_DELETE_WINDOW", self.on_closing)
+        
+        self.window.lift()
+        self.window.focus_force()
+        
+        # 初始化播放状态
+        self.is_playing = False
+        self.animation_after_id = None
+
+    def set_zoom(self, level):
+        """设置缩放级别"""
+        self.zoom_level = level
+        self.update_preview()
+        self.update_info()
+        self.update_zoom_buttons()
+        self.update_scrollregion()
+
+    def start_pan(self, event):
+        """开始平移"""
+        self.canvas.scan_mark(event.x, event.y)
+
+    def pan(self, event):
+        """平移画布"""
+        self.canvas.scan_dragto(event.x, event.y, gain=1)
+
+    def zoom_wheel(self, event):
+        """鼠标滚轮缩放"""
+        if event.delta > 0 and self.zoom_level < 16:
+            self.zoom_level = int(self.zoom_level * 2)
+        elif event.delta < 0 and self.zoom_level > 1:
+            self.zoom_level = int(self.zoom_level / 2)
+        self.update_preview()
+        self.update_info()
+
+    def update_info(self):
+        """更新图片信息显示"""
+        if self.image:
+            width, height = self.image.size
+            frame_info = f" 帧:{self.current_frame + 1}/{self.image.n_frames}" if hasattr(self.image, "n_frames") else ""
+            self.info_label.configure(
+                text=f"{width}x{height} ({self.zoom_level}x){frame_info}"
+            )
+
+    def reset_changes(self):
+        """重置所有更改"""
         try:
-            # 先尝试用 PIL 打开图片
-            pil_image = Image.open(self.image_path)
+            # 重置所有编辑参数
+            self.hue_shift = 0
+            self.brightness = 1.0
+            self.contrast = 1.0
             
-            # 如果是 GIF，获取第一帧
-            if getattr(pil_image, "is_animated", False):
-                self.is_gif = True
-                self.frame_count = pil_image.n_frames
-                self.current_frame = 0
-                self.frames = []
+            # 重置所有滑块
+            self.hue_slider.set(0)
+            self.brightness_slider.set(1.0)
+            self.contrast_slider.set(1.0)
+            
+            # 重置图像
+            self.image = self.original_image.copy()
+            self.current_frame = 0
+            
+            # 如果是GIF，重置到第一帧
+            if hasattr(self.image, "n_frames"):
+                self.image.seek(0)
                 
-                # 预加载所有帧
-                for frame in range(self.frame_count):
-                    pil_image.seek(frame)
-                    # 转换为 RGB 模式
-                    frame_rgb = pil_image.convert('RGB')
-                    # 转换为 numpy 数组
-                    frame_array = np.array(frame_rgb)
-                    self.frames.append(frame_array)
+                # 如果正在播放，停止播放
+                if self.is_playing:
+                    self.toggle_play()
+            
+            # 更新预览
+            self.update_preview()
+            self.update_info()
+            
+            # 通知主界面恢复原图
+            if self.on_image_changed:
+                self.on_image_changed(self.image_path)
+            
+        except Exception as e:
+            print(f"重置出错：{str(e)}")
+
+    def update_brightness(self, value):
+        """更新亮度"""
+        self.brightness = float(value)
+        self.update_preview()
+
+    def update_contrast(self, value):
+        """更新对比度"""
+        self.contrast = float(value)
+        self.update_preview()
+
+    def update_hue(self, value):
+        """更新色相预览"""
+        self.hue_shift = float(value)
+        self.update_preview()
+
+    def apply_changes(self):
+        """应用色相变化"""
+        try:
+            cache_path = os.path.join(self.cache_dir, f"edited_{os.path.basename(self.image_path)}")
+            
+            # 如果是GIF，需要处理所有帧
+            if hasattr(self.original_image, "n_frames"):
+                # 保存当前帧
+                current_frame_index = self.current_frame
                 
-                self.original = self.frames[0]
+                # 创建新的GIF
+                frames = []
+                durations = []
                 
-                # 获取帧延迟时间
-                self.frame_delay = pil_image.info.get('duration', 100)  # 默认 100ms
+                # 获取原始GIF的调色板（如果有）
+                palette = self.original_image.getpalette()
                 
-                # 开始动画
-                self.play_animation()
+                # 处理每一帧
+                for i in range(self.original_image.n_frames):
+                    self.original_image.seek(i)
+                    frame = self.original_image.copy()
+                    # 应用编辑效果
+                    edited_frame = self.adjust_image(frame)
+                    # 如果原图有调色板，应用到编辑后的帧
+                    if palette:
+                        edited_frame.putpalette(palette)
+                    frames.append(edited_frame)
+                    # 保存每一帧的持续时间
+                    durations.append(self.original_image.info.get('duration', 100))
+                
+                # 保存为新的GIF，保持原始GIF的属性
+                try:
+                    frames[0].save(
+                        cache_path,
+                        save_all=True,
+                        append_images=frames[1:],
+                        duration=durations,
+                        loop=self.original_image.info.get('loop', 0),
+                        format='GIF',
+                        optimize=False,  # 禁用优化以保持质量
+                        **{k: v for k, v in self.original_image.info.items() 
+                           if k in {'transparency', 'background', 'version', 'disposal'}}
+                    )
+                except (TypeError, ValueError) as e:
+                    # 如果带透明度保存失败，尝试不带透明度保存
+                    frames[0].save(
+                        cache_path,
+                        save_all=True,
+                        append_images=frames[1:],
+                        duration=durations,
+                        loop=self.original_image.info.get('loop', 0),
+                        format='GIF',
+                        optimize=False
+                    )
+                
+                # 重新加载编辑后的GIF
+                self.image = Image.open(cache_path)
+                # 恢复到之前的帧
+                self.image.seek(current_frame_index)
+                
             else:
-                self.is_gif = False
-                # 如果是普通图片，直接转换为 numpy 数组
-                pil_image = pil_image.convert('RGB')
-                self.original = np.array(pil_image)
+                # 静态图片直接应用编辑
+                edited_image = self.adjust_image(self.original_image)
+                edited_image.save(cache_path)
+                self.image = edited_image
             
+            # 更新预览
             self.update_preview()
             
+            # 通知主界面更新
+            if self.on_image_changed:
+                self.on_image_changed(cache_path)
+            
         except Exception as e:
+            print(f"应用更改时出错：{str(e)}")
             CTkMessagebox(
                 title="错误",
-                message=f"无法加载图片：{str(e)}",
+                message=f"应用更改失败：{str(e)}",
                 icon="cancel"
             )
-    
-    def play_animation(self):
-        """播放 GIF 动画"""
+
+    def adjust_image(self, image):
+        """调整图片的亮度、对比度和色相"""
         try:
-            # 如果存在之前的动画定时器，先取消它
-            if hasattr(self, 'animation_after_id') and self.animation_after_id:
-                self.dialog.after_cancel(self.animation_after_id)
-                self.animation_after_id = None
+            # 保存原始模式
+            original_mode = image.mode
             
-            if self.is_gif and self.is_playing:
-                self.current_frame = (self.current_frame + 1) % self.frame_count
-                self.original = self.frames[self.current_frame]
-                self.update_preview()
-                self.update_info()  # 更新帧数显示
-                
-                # 使用当前的播放速度
-                current_delay = int(self.frame_delay * self.current_speed)
-                self.animation_after_id = self.dialog.after(current_delay, self.play_animation)
+            # 保存透明通道（如果有）
+            if original_mode == 'RGBA':
+                r, g, b, a = image.split()
+            elif original_mode == 'P':  # 处理调色板模式
+                if 'transparency' in image.info:
+                    # 转换为RGBA以保持透明度
+                    image = image.convert('RGBA')
+                    r, g, b, a = image.split()
+                else:
+                    # 如果没有透明度，转换为RGB
+                    image = image.convert('RGB')
+                    r, g, b = image.split()
+                    a = None
+            else:
+                # 转换为RGB
+                image = image.convert('RGB')
+                r, g, b = image.split()
+                a = None
+            
+            # 合并通道进行处理
+            rgb_image = Image.merge('RGB', (r, g, b))
+            
+            # 调整亮度
+            enhancer = ImageEnhance.Brightness(rgb_image)
+            rgb_image = enhancer.enhance(self.brightness)
+            
+            # 调整对比度
+            enhancer = ImageEnhance.Contrast(rgb_image)
+            rgb_image = enhancer.enhance(self.contrast)
+            
+            # 调整色相
+            if self.hue_shift != 0:
+                rgb_image = self.adjust_hue_with_pillow(rgb_image, self.hue_shift)
+            
+            # 分离通道
+            r, g, b = rgb_image.split()
+            
+            # 根据原始模式重建图像
+            if a is not None:
+                result = Image.merge('RGBA', (r, g, b, a))
+                if original_mode == 'P':
+                    # 如果原图是调色板模式，尝试转换回调色板模式
+                    try:
+                        result = result.convert('P', palette=Image.ADAPTIVE)
+                    except:
+                        pass  # 如果转换失败，保持RGBA模式
+            else:
+                result = Image.merge('RGB', (r, g, b))
+                if original_mode == 'P':
+                    # 如果原图是调色板模式，尝试转换回调色板模式
+                    try:
+                        result = result.convert('P', palette=Image.ADAPTIVE)
+                    except:
+                        pass  # 如果转换失败，保持RGB模式
+            
+            return result
+            
         except Exception as e:
-            print(f"播放动画时出错：{str(e)}")
-    
+            print(f"调整图像出错：{str(e)}")
+            return image
+
+    def adjust_hue_with_pillow(self, image, hue_shift):
+        """使用 Pillow 调整图片色相"""
+        try:
+            # 确保图像是 RGB 模式
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
+            
+            # 将色相偏移转换为 HSV 空间的调整
+            img_array = np.array(image)
+            
+            # 转换为浮点数并归一化
+            img_array = img_array.astype(np.float32) / 255.0
+            
+            # 转换为 HSV
+            h, s, v = np.vectorize(colorsys.rgb_to_hsv)(
+                img_array[..., 0],
+                img_array[..., 1],
+                img_array[..., 2]
+            )
+            
+            # 调整色相
+            h = (h + hue_shift / 360.0) % 1.0
+            
+            # 转换回 RGB
+            r, g, b = np.vectorize(colorsys.hsv_to_rgb)(h, s, v)
+            
+            # 重新组合通道并转换回 uint8
+            rgb_array = np.stack([r, g, b], axis=-1) * 255
+            rgb_array = rgb_array.astype(np.uint8)
+            
+            # 转换回 PIL 图像
+            return Image.fromarray(rgb_array, mode='RGB')
+            
+        except Exception as e:
+            print(f"调整色相出错：{str(e)}")
+            return image
+
+    def on_canvas_resize(self, event):
+        """当画布大小改变时更新预览"""
+        if hasattr(self, 'preview_photo'):
+            self.update_preview()
+
     def update_preview(self):
-        """更新预览"""
-        if not hasattr(self, 'original') or self.original is None:
+        """更新预览图片"""
+        if not self.image:
             return
         
         try:
-            # 应用图像处理
-            img = self.original.copy()
+            # 获取当前帧
+            current_frame = self.image
+            if hasattr(self.image, "n_frames"):
+                self.image.seek(self.current_frame)
+                current_frame = self.image.copy()
             
-            # 色相调整
-            if self.hue != 0:
-                # 转换到HSV色彩空间
-                hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV).astype(np.float32)
-                # 调整色相通道
-                hsv[:, :, 0] = (hsv[:, :, 0] + self.hue) % 180
-                img = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2RGB)
+            # 应用编辑效果
+            current_image = self.adjust_image(current_frame)
             
-            # 亮度和对比度
-            img = cv2.convertScaleAbs(
-                img,
-                alpha=self.contrast,
-                beta=self.brightness
-            )
-            
-            # 饱和度
-            if self.saturation != 1.0:
-                hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV).astype(np.float32)
-                hsv[:, :, 1] = hsv[:, :, 1] * self.saturation
-                hsv[:, :, 1] = np.clip(hsv[:, :, 1], 0, 255)
-                img = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2RGB)
-            
-            # 锐化
-            if self.sharpness != 1.0:
-                kernel = np.array([[-1,-1,-1],
-                                 [-1, 9,-1],
-                                 [-1,-1,-1]]) * self.sharpness
-                img = cv2.filter2D(img, -1, kernel)
-            
-            # 旋转
-            if self.rotation != 0:
-                center = (img.shape[1] // 2, img.shape[0] // 2)
-                matrix = cv2.getRotationMatrix2D(center, self.rotation, 1.0)
-                img = cv2.warpAffine(img, matrix, (img.shape[1], img.shape[0]))
-            
-            # 缩放
+            # 获取画布尺寸
             canvas_width = self.canvas.winfo_width()
             canvas_height = self.canvas.winfo_height()
             
-            if canvas_width > 1 and canvas_height > 1:
-                # 计算缩放比例
-                scale_x = canvas_width / img.shape[1]
-                scale_y = canvas_height / img.shape[0]
-                scale = min(scale_x, scale_y) * self.scale
-                
-                if scale != 1:
-                    new_width = int(img.shape[1] * scale)
-                    new_height = int(img.shape[0] * scale)
-                    img = cv2.resize(
-                        img,
-                        (new_width, new_height),
-                        interpolation=cv2.INTER_LANCZOS4
-                    )
-            
-            # 转换为PhotoImage
-            img = Image.fromarray(img)
-            self.photo = ImageTk.PhotoImage(img)
-            
-            # 更新画布
-            self.canvas.delete("all")
-            self.canvas.create_image(
-                canvas_width//2,
-                canvas_height//2,
-                image=self.photo,
-                anchor="center"
-            )
-            
-            # 更新缩放标签
-            self.zoom_label.configure(text=f"{int(self.scale * 100)}%")
-            
-        except Exception as e:
-            print(f"更新预览时出错：{str(e)}")
-    
-    def on_resize(self, event):
-        """窗口大小改变时更新预览"""
-        self.update_preview()
-    
-    def on_mousewheel(self, event):
-        """鼠标滚轮缩放"""
-        if event.delta > 0:
-            self.scale *= 1.1
-        else:
-            self.scale /= 1.1
-        self.update_preview()
-    
-    def on_ctrl_mousewheel(self, event):
-        """Ctrl+滚轮旋转"""
-        if event.delta > 0:
-            self.rotate(5)
-        else:
-            self.rotate(-5)
-    
-    def on_brightness_change(self, value):
-        """亮度改变"""
-        self.brightness = float(value)
-        self.update_preview()
-    
-    def on_contrast_change(self, value):
-        """对比度改变"""
-        self.contrast = float(value)
-        self.update_preview()
-    
-    def rotate(self, angle):
-        """旋转图片"""
-        self.rotation = (self.rotation + angle) % 360
-        self.update_preview()
-    
-    def center_window(self):
-        """窗口居中"""
-        self.dialog.update()
-        width = self.dialog.winfo_width()
-        height = self.dialog.winfo_height()
-        screen_width = self.dialog.winfo_screenwidth()
-        screen_height = self.dialog.winfo_screenheight()
-        
-        x = (screen_width - width) // 2
-        y = (screen_height - height) // 2
-        
-        self.dialog.geometry(f"+{x}+{y}") 
-    
-    def reset_all(self):
-        """重置所有参数为默认值"""
-        self.scale = self.DEFAULT_VALUES['scale']
-        self.brightness = self.DEFAULT_VALUES['brightness']
-        self.contrast = self.DEFAULT_VALUES['contrast']
-        self.rotation = self.DEFAULT_VALUES['rotation']
-        self.saturation = self.DEFAULT_VALUES['saturation']
-        self.sharpness = self.DEFAULT_VALUES['sharpness']
-        self.hue = self.DEFAULT_VALUES['hue']
-        
-        # 重置所有滑块
-        self.brightness_slider.set(self.brightness)
-        self.contrast_slider.set(self.contrast)
-        self.saturation_slider.set(self.saturation)
-        self.sharpness_slider.set(self.sharpness)
-        self.hue_slider.set(self.hue)
-        
-        self.update_preview()
-        
-    def save_image(self):
-        """保存当前图片"""
-        try:
-            # 根据原始图片是否为GIF提供不同的保存选项
-            if self.is_gif:
-                save_options = [
-                    ("精灵图 PNG", "*.png"),
-                    ("GIF 动画", "*.gif")
-                ]
-            else:
-                save_options = [
-                    ("PNG 文件", "*.png"),
-                    ("JPEG 文件", "*.jpg"),
-                    ("所有文件", "*.*")
-                ]
-            
-            file_path = filedialog.asksaveasfilename(
-                defaultextension=".png",
-                filetypes=save_options
-            )
-            
-            if not file_path:
+            if canvas_width <= 1 or canvas_height <= 1:
                 return
             
-            # 如果是GIF且用户选择保存为GIF
-            if self.is_gif and file_path.lower().endswith('.gif'):
-                # 创建新的GIF
-                processed_frames = []
-                for frame in self.frames:
-                    img = frame.copy()
-                    
-                    # 应用所有图像处理效果
-                    if self.hue != 0:
-                        hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV).astype(np.float32)
-                        hsv[:, :, 0] = (hsv[:, :, 0] + self.hue) % 180
-                        img = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2RGB)
-                    
-                    if self.contrast != 1.0 or self.brightness != 0:
-                        img = cv2.convertScaleAbs(img, alpha=self.contrast, beta=self.brightness)
-                    
-                    if self.saturation != 1.0:
-                        hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV).astype(np.float32)
-                        hsv[:, :, 1] = hsv[:, :, 1] * self.saturation
-                        hsv[:, :, 1] = np.clip(hsv[:, :, 1], 0, 255)
-                        img = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2RGB)
-                    
-                    if self.rotation != 0:
-                        center = (img.shape[1] // 2, img.shape[0] // 2)
-                        matrix = cv2.getRotationMatrix2D(center, self.rotation, 1.0)
-                        img = cv2.warpAffine(img, matrix, (img.shape[1], img.shape[0]))
-                    
-                    processed_frames.append(Image.fromarray(img))
-                
-                # 保存GIF
-                processed_frames[0].save(
-                    file_path,
-                    save_all=True,
-                    append_images=processed_frames[1:],
-                    duration=self.frame_delay,
-                    loop=0
-                )
-                
-            # 如果是GIF且用户选择保存为PNG（精灵图）
-            elif self.is_gif and file_path.lower().endswith('.png'):
-                # 创建精灵图
-                total_width = self.frames[0].shape[1] * len(self.frames)
-                height = self.frames[0].shape[0]
-                sprite_sheet = np.zeros((height, total_width, 3), dtype=np.uint8)
-                
-                for i, frame in enumerate(self.frames):
-                    img = frame.copy()
-                    
-                    # 应用所有图像处理效果
-                    if self.hue != 0:
-                        hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV).astype(np.float32)
-                        hsv[:, :, 0] = (hsv[:, :, 0] + self.hue) % 180
-                        img = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2RGB)
-                    
-                    if self.contrast != 1.0 or self.brightness != 0:
-                        img = cv2.convertScaleAbs(img, alpha=self.contrast, beta=self.brightness)
-                    
-                    if self.saturation != 1.0:
-                        hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV).astype(np.float32)
-                        hsv[:, :, 1] = hsv[:, :, 1] * self.saturation
-                        hsv[:, :, 1] = np.clip(hsv[:, :, 1], 0, 255)
-                        img = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2RGB)
-                    
-                    if self.rotation != 0:
-                        center = (img.shape[1] // 2, img.shape[0] // 2)
-                        matrix = cv2.getRotationMatrix2D(center, self.rotation, 1.0)
-                        img = cv2.warpAffine(img, matrix, (img.shape[1], img.shape[0]))
-                    
-                    # 将帧添加到精灵图中
-                    sprite_sheet[:, i*img.shape[1]:(i+1)*img.shape[1]] = img
-                
-                # 保存精灵图
-                Image.fromarray(sprite_sheet).save(file_path)
-                
-            # 如果是普通图片
-            else:
-                img = self.original.copy()
-                
-                # 应用所有图像处理效果
-                if self.hue != 0:
-                    hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV).astype(np.float32)
-                    hsv[:, :, 0] = (hsv[:, :, 0] + self.hue) % 180
-                    img = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2RGB)
-                
-                if self.contrast != 1.0 or self.brightness != 0:
-                    img = cv2.convertScaleAbs(img, alpha=self.contrast, beta=self.brightness)
-                
-                if self.saturation != 1.0:
-                    hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV).astype(np.float32)
-                    hsv[:, :, 1] = hsv[:, :, 1] * self.saturation
-                    hsv[:, :, 1] = np.clip(hsv[:, :, 1], 0, 255)
-                    img = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2RGB)
-                
-                if self.rotation != 0:
-                    center = (img.shape[1] // 2, img.shape[0] // 2)
-                    matrix = cv2.getRotationMatrix2D(center, self.rotation, 1.0)
-                    img = cv2.warpAffine(img, matrix, (img.shape[1], img.shape[0]))
-                
-                Image.fromarray(img).save(file_path)
+            # 计算缩放后的尺寸
+            img_width, img_height = current_image.size
+            new_width = int(img_width * self.zoom_level)
+            new_height = int(img_height * self.zoom_level)
             
-            CTkMessagebox(
-                title="成功",
-                message="图片已保存",
-                icon="check"
+            # 计算居中位置
+            x = int(max(0, (canvas_width - new_width) // 2))
+            y = int(max(0, (canvas_height - new_height) // 2))
+            
+            # 缩放图像
+            resized_image = current_image.resize(
+                (new_width, new_height),
+                Image.Resampling.NEAREST
             )
+            
+            # 更新预览
+            self.preview_photo = ImageTk.PhotoImage(resized_image)
+            self.canvas.delete("all")
+            
+            # 绘制透明背景网格
+            self.draw_transparency_grid(x, y, new_width, new_height)
+            
+            # 显示图片
+            self.canvas.create_image(
+                x, y,
+                anchor="nw",
+                image=self.preview_photo
+            )
+            
+            # 更新滚动区域
+            self.update_scrollregion()
             
         except Exception as e:
-            CTkMessagebox(
-                title="错误",
-                message=f"保存图片时出错：{str(e)}",
-                icon="cancel"
-            )
-            
-    def on_saturation_change(self, value):
-        """饱和度改变"""
-        self.saturation = float(value)
-        self.update_preview()
+            print(f"更新预览出错：{str(e)}")
+
+    def draw_transparency_grid(self, x, y, width, height):
+        """绘制透明背景网格"""
+        grid_size = 8 * self.zoom_level  # 网格大小随缩放变化
         
-    def on_sharpness_change(self, value):
-        """锐化改变"""
-        self.sharpness = float(value)
-        self.update_preview()
+        # 计算网格范围
+        rows = height // grid_size + 1
+        cols = width // grid_size + 1
         
-    def on_hue_change(self, value):
-        """色相改变"""
-        self.hue = float(value)
-        self.update_preview()
+        for row in range(rows):
+            for col in range(cols):
+                # 计算网格块的位置
+                grid_x = x + col * grid_size
+                grid_y = y + row * grid_size
+                
+                # 交替填充颜色
+                color = '#2b2b2b' if (row + col) % 2 == 0 else '#363636'
+                
+                # 在图片下方绘制网格
+                self.canvas.create_rectangle(
+                    grid_x, grid_y,
+                    grid_x + grid_size, grid_y + grid_size,
+                    fill=color, outline="",
+                    tags="grid"
+                )
         
-    def toggle_play(self):
-        """切换播放状态"""
-        if hasattr(self, 'is_playing'):
-            self.is_playing = not self.is_playing
-            self.play_btn.configure(text="⏸" if self.is_playing else "▶")
-            
+        # 将网格移到图片下方
+        self.canvas.tag_lower("grid")
+
+    def update_scrollregion(self):
+        """更新滚动区域"""
+        if not self.image:
+            return
+        
+        # 计算图片缩放后的尺寸
+        img_width, img_height = self.image.size
+        new_width = int(img_width * self.zoom_level)
+        new_height = int(img_height * self.zoom_level)
+        
+        # 获取画布尺寸
+        canvas_width = self.canvas.winfo_width()
+        canvas_height = self.canvas.winfo_height()
+        
+        # 计算滚动区域
+        scroll_width = max(new_width, canvas_width)
+        scroll_height = max(new_height, canvas_height)
+        
+        # 设置滚动区域
+        self.canvas.configure(scrollregion=(0, 0, scroll_width, scroll_height))
+
+    def update_zoom_buttons(self):
+        """更新缩放按钮状态"""
+        # 遍历所有缩放按钮
+        for child in self.zoom_frame.winfo_children():
+            if isinstance(child, ctk.CTkButton):
+                # 从按钮文本中获取缩放级别
+                try:
+                    zoom = int(child.cget("text").replace("x", ""))
+                    # 设置当前缩放级别按钮的颜色
+                    if zoom == self.zoom_level:
+                        child.configure(
+                            fg_color="#1a4578",  # 深蓝色
+                            hover_color="#153a66"  # 更深的蓝色
+                        )
+                    else:
+                        child.configure(
+                            fg_color="#1f538d",  # 正常蓝色
+                            hover_color="#1a4578"  # 深蓝色
+                        )
+                except ValueError:
+                    continue
+
+    def on_closing(self):
+        """窗口关闭时的处理"""
+        try:
+            # 如果正在播放，停止播放
             if self.is_playing:
-                self.play_animation()
-            else:
-                # 停止动画
-                if self.animation_after_id:
-                    self.dialog.after_cancel(self.animation_after_id)
-                    self.animation_after_id = None
-    
-    def on_speed_change(self, value):
-        """改变播放速度"""
-        speed_map = {
-            "0.5x": 2.0,
-            "1x": 1.0,
-            "2x": 0.5
-        }
-        self.current_speed = speed_map[value]
-        
-        # 如果当前正在播放，重新开始播放以应用新速度
-        if hasattr(self, 'is_playing') and self.is_playing:
-            # 重新启动动画（会自动取消旧的动画）
-            self.play_animation()
-    
-    def create_info_panel(self):
-        """创建信息面板"""
-        self.info_frame = ctk.CTkFrame(self.main_frame, fg_color="#1f1f1f", height=30)
-        self.info_frame.pack(fill="x", padx=5, pady=(0, 5))
-        self.info_frame.pack_propagate(False)
-        
-        # 图片尺寸信息
-        self.size_label = ctk.CTkLabel(
-            self.info_frame,
-            text="尺寸: --x--",
-            font=("Arial", 12)
-        )
-        self.size_label.pack(side="left", padx=10)
-        
-        # 帧数信息
-        self.frame_label = ctk.CTkLabel(
-            self.info_frame,
-            text="帧数: --/--",
-            font=("Arial", 12)
-        )
-        self.frame_label.pack(side="left", padx=10)
-        
-        # 文件大小信息
-        self.size_info_label = ctk.CTkLabel(
-            self.info_frame,
-            text="文件大小: --",
-            font=("Arial", 12)
-        )
-        self.size_info_label.pack(side="left", padx=10)
-
-    def update_info(self):
-        """更新信息显示"""
-        if hasattr(self, 'original'):
-            # 更新尺寸信息
-            height, width = self.original.shape[:2]
-            self.size_label.configure(text=f"尺寸: {width}x{height}")
+                self.toggle_play()
             
-            # 更新帧数信息
-            if hasattr(self, 'frame_count'):
-                self.frame_label.configure(
-                    text=f"帧数: {self.current_frame + 1}/{self.frame_count}"
-                )
+            # 清理缓存文件
+            if os.path.exists(self.cache_dir):
+                for file in os.listdir(self.cache_dir):
+                    try:
+                        os.remove(os.path.join(self.cache_dir, file))
+                    except:
+                        pass
             
-            # 更新文件大小信息
-            file_size = os.path.getsize(self.image_path)
-            size_str = self.format_size(file_size)
-            self.size_info_label.configure(text=f"文件大小: {size_str}")
-
-    @staticmethod
-    def format_size(size):
-        """格式化文件大小显示"""
-        for unit in ['B', 'KB', 'MB', 'GB']:
-            if size < 1024:
-                return f"{size:.1f} {unit}"
-            size /= 1024
-        return f"{size:.1f} TB" 
-
-    def setup_shortcuts(self):
-        """设置键盘快捷键"""
-        self.dialog.bind('<Control-s>', lambda e: self.save_image())
-        self.dialog.bind('<Control-r>', lambda e: self.reset_all())
-        self.dialog.bind('<space>', lambda e: self.toggle_play())
-        self.dialog.bind('<Left>', lambda e: self.prev_frame())
-        self.dialog.bind('<Right>', lambda e: self.next_frame())
-        self.dialog.bind('<Control-plus>', lambda e: self.zoom(1.1))
-        self.dialog.bind('<Control-minus>', lambda e: self.zoom(0.9)) 
-
-    def setup_drag_drop(self):
-        """设置拖放功能"""
-        try:
-            # 为预览窗口添加拖放绑定
-            self.dialog.drop_target_register(DND_FILES)
-            self.dialog.dnd_bind('<<Drop>>', self.on_drop)
-            
-            # 为预览画布添加拖放绑定
-            self.preview_canvas.drop_target_register(DND_FILES)
-            self.preview_canvas.dnd_bind('<<Drop>>', self.on_drop)
-            
-            # 为预览框架添加拖放绑定
-            self.preview_frame.drop_target_register(DND_FILES)
-            self.preview_frame.dnd_bind('<<Drop>>', self.on_drop)
+            # 销毁窗口
+            self.window.destroy()
         except Exception as e:
-            print(f"设置拖放功能时出错：{str(e)}")
-
-    def on_drop(self, event):
-        """处理文件拖放"""
-        try:
-            file_path = event.data
-            
-            # 移除可能的大括号和引号
-            file_path = file_path.strip('{}')
-            file_path = file_path.strip('"')
-            
-            # 检查文件类型
-            if file_path.lower().endswith(('.png', '.gif', '.jpg', '.jpeg')):
-                self.image_path = file_path
-                self.load_image()
-                # 更新信息显示
-                self.update_info()
-                # 重置所有滑块
-                self.reset_all()
-            else:
-                CTkMessagebox(
-                    title="错误",
-                    message="不支持的文件格式。请使用 PNG、GIF 或 JPEG 格式的图片。",
-                    icon="cancel"
-                )
-        except Exception as e:
-            CTkMessagebox(
-                title="错误",
-                message=f"无法加载图片：{str(e)}",
-                icon="cancel"
-            ) 
+            print(f"关闭窗口时出错：{str(e)}")
+            self.window.destroy()

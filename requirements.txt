@@ -1,0 +1,6 @@
+customtkinter>=5.2.0
+Pillow>=10.0.0
+tkinterdnd2>=0.3.0
+CTkMessagebox>=2.5
+numpy>=1.21.0
+matplotlib>=3.4.0
