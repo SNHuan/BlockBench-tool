@@ -1,1 +1,18 @@
- 
+# 自动处理行尾
+* text=auto
+
+# Python 文件使用 LF
+*.py text eol=lf
+*.pyw text eol=lf
+
+# Windows 批处理文件使用 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制文件不处理
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.dll binary
+*.exe binary 
