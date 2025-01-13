@@ -1,5 +1,8 @@
 from src.gui.app import AnimationGeneratorApp
 
-if __name__ == "__main__":
+def main():
     app = AnimationGeneratorApp()
-    app.run()
+    app.root.mainloop()
+
+if __name__ == "__main__":
+    main()

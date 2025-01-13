@@ -24,6 +24,7 @@ wheels/
 venv/
 ENV/
 env/
+.env/
 
 # IDE
 .idea/
@@ -32,6 +33,19 @@ env/
 *.swo
 
 # Project specific
-cache/
-output/
-*.log 
+models/
+*.spec
+*.dll
+*.pyd
+*.exe
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride 

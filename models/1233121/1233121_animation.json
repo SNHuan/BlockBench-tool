@@ -2,7 +2,7 @@
     "format_version": "1.8.0",
     "animations": {
         "idle": {
-            "loop": false,
+            "loop": true,
             "animation_length": 1.4000000000000001,
             "bones": {
                 "bone1": {
@@ -557,9 +557,9 @@
                     "scale": {
                         "0.0": {
                             "pre": [
-                                0,
-                                0,
-                                0
+                                1,
+                                1,
+                                1
                             ],
                             "post": [
                                 0,
