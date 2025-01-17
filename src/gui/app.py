@@ -111,7 +111,7 @@ class AnimationGeneratorApp:
             font=ctk.CTkFont(size=16, weight="bold")
         )
         self.generate_btn.pack(fill="x", padx=15, pady=20)
-
+        
     def create_parameter_inputs(self):
         """创建参数输入区域"""
         settings_frame = ctk.CTkFrame(self.left_panel)
@@ -143,18 +143,19 @@ class AnimationGeneratorApp:
         
         self.animation_type = ctk.CTkSegmentedButton(
             type_frame,
-            values=["普通动画", "圆形动画"],
+            values=["普通动画", "圆形动画", "分段动画"],
             command=self.on_animation_type_change
         )
         self.animation_type.pack(fill="x", padx=5, pady=5)
         self.animation_type.set("普通动画")
         
-        # 旋转角度输入框（默认隐藏）
+        # 旋转角度/分段数输入框（默认隐藏）
         self.rotation_frame = ctk.CTkFrame(settings_frame)
-        ctk.CTkLabel(
+        self.rotation_label = ctk.CTkLabel(
             self.rotation_frame,
             text="旋转角度:"
-        ).pack(side="left", padx=5)
+        )
+        self.rotation_label.pack(side="left", padx=5)
         
         self.entries["rotation_angle"] = ctk.CTkEntry(self.rotation_frame)
         self.entries["rotation_angle"].insert(0, "360")
@@ -246,7 +247,7 @@ class AnimationGeneratorApp:
         """更新预览图片"""
         if not self.image:
             return
-        
+            
         try:
             # 获取画布尺寸
             canvas_width = self.preview_canvas.winfo_width()
@@ -291,6 +292,14 @@ class AnimationGeneratorApp:
     def on_animation_type_change(self, value):
         """动画类型改变时的回调"""
         if value == "圆形动画":
+            self.rotation_label.configure(text="旋转角度:")
+            self.entries["rotation_angle"].delete(0, "end")
+            self.entries["rotation_angle"].insert(0, "360")
+            self.rotation_frame.pack(fill="x", pady=2)
+        elif value == "分段动画":
+            self.rotation_label.configure(text="分段数量:")
+            self.entries["rotation_angle"].delete(0, "end")
+            self.entries["rotation_angle"].insert(0, "8")
             self.rotation_frame.pack(fill="x", pady=2)
         else:
             self.rotation_frame.pack_forget()
@@ -333,35 +342,56 @@ class AnimationGeneratorApp:
             model_dir = os.path.join(models_dir, params["texture_name"])
             os.makedirs(model_dir, exist_ok=True)
             
-            # 获取旋转角度
-            rotation_angle = 360  # 默认值
-            if params["animation_type"] == "圆形动画":
+            # 获取旋转角度或分段数
+            section_count = 8  # 默认分段数
+            if params["animation_type"] in ["圆形动画", "分段动画"]:
                 try:
-                    rotation_angle = float(self.entries["rotation_angle"].get())
-                    if rotation_angle <= 0:
-                        raise ValueError("旋转角度必须大于0")
+                    value = float(self.entries["rotation_angle"].get())
+                    if value <= 0:
+                        raise ValueError(
+                            "旋转角度必须大于0" if params["animation_type"] == "圆形动画"
+                            else "分段数必须大于0"
+                        )
+                    if params["animation_type"] == "分段动画":
+                        if section_count <= 0:
+                            raise ValueError("分段数必须大于0")
+                        else:
+                            section_count = int(value)
                 except ValueError as e:
-                    raise ValueError("请输入有效的旋转角度")
+                    raise ValueError(
+                        "请输入有效的旋转角度" if params["animation_type"] == "圆形动画"
+                        else "请输入有效的分段数"
+                    )
             
             # 生成几何体
-            geometry = GeometryGenerator.create_normal_geometry(
-                params["texture_width"],
-                params["texture_height"],
-                params["frame_count"]
-            ) if params["animation_type"] == "普通动画" else \
-            GeometryGenerator.create_circle_geometry(
-                params["texture_width"],
-                params["texture_height"],
-                params["frame_count"],
-                rotation_angle  # 使用用户输入的旋转角度
-            )
+            if params["animation_type"] == "普通动画":
+                geometry = GeometryGenerator.create_normal_geometry(
+                    params["texture_width"],
+                    params["texture_height"],
+                    params["frame_count"]
+                )
+            elif params["animation_type"] == "圆形动画":
+                geometry = GeometryGenerator.create_circle_geometry(
+                    params["texture_width"],
+                    params["texture_height"],
+                    params["frame_count"],
+                    value  # 旋转角度
+                )
+            else:  # 分段动画
+                geometry = GeometryGenerator.create_section_geometry(
+                    params["texture_width"],
+                    params["texture_height"],
+                    params["frame_count"],
+                    section_count  # 分段数
+                )
             
             # 生成动画
             animation = AnimationGenerator.create_animation(
                 params["frame_count"],
-                params["animation_type"] == "圆形动画",
-                params["frame_time"],
-                params["loop"]
+                animation_type=params["animation_type"],  # 转换为英文
+                frame_time=params["frame_time"],
+                loop=params["loop"],
+                section_count=section_count,
             )
             
             # 保存几何体文件
@@ -384,7 +414,7 @@ class AnimationGeneratorApp:
                 )
             
             CTkMessagebox(
-                title="成功",
+                title="成功", 
                 message=f"动画已生成！\n文件保存在：{model_dir}",
                 icon="check"
             )
