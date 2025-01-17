@@ -9,6 +9,7 @@ import json
 import sys
 from functools import lru_cache
 from tkinterdnd2 import TkinterDnD, DND_FILES
+from .section_editor import SectionEditorDialog
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from src.utils.image_processor import ImageProcessor
@@ -57,6 +58,12 @@ class AnimationGeneratorApp:
         
         # 绑定窗口关闭事件
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        
+        # 添加分段位置存储
+        self.section_positions = None
+        
+        # 添加分段数据持久化
+        self.load_section_data()
 
     def create_panels(self):
         """创建左右面板"""
@@ -160,6 +167,15 @@ class AnimationGeneratorApp:
         self.entries["rotation_angle"] = ctk.CTkEntry(self.rotation_frame)
         self.entries["rotation_angle"].insert(0, "360")
         self.entries["rotation_angle"].pack(side="right", fill="x", expand=True, padx=5)
+        
+        # 分段编辑按钮（默认隐藏）
+        self.section_frame = ctk.CTkFrame(settings_frame)
+        self.section_btn = ctk.CTkButton(
+            self.section_frame,
+            text="编辑分段",
+            command=self.edit_sections
+        )
+        self.section_btn.pack(fill="x", padx=5, pady=5)
         
         # 循环选项
         self.loop_var = tk.BooleanVar(value=False)
@@ -296,13 +312,16 @@ class AnimationGeneratorApp:
             self.entries["rotation_angle"].delete(0, "end")
             self.entries["rotation_angle"].insert(0, "360")
             self.rotation_frame.pack(fill="x", pady=2)
+            self.section_frame.pack_forget()  # 隐藏分段编辑按钮
         elif value == "分段动画":
             self.rotation_label.configure(text="分段数量:")
             self.entries["rotation_angle"].delete(0, "end")
             self.entries["rotation_angle"].insert(0, "8")
             self.rotation_frame.pack(fill="x", pady=2)
+            self.section_frame.pack(fill="x", pady=2)  # 显示分段编辑按钮
         else:
             self.rotation_frame.pack_forget()
+            self.section_frame.pack_forget()
 
     def on_canvas_resize(self, event):
         """画布大小改变时的回调"""
@@ -382,7 +401,8 @@ class AnimationGeneratorApp:
                     params["texture_width"],
                     params["texture_height"],
                     params["frame_count"],
-                    section_count  # 分段数
+                    section_count,  # 分段数
+                    positions=self.section_positions  # 传递枢轴点位置
                 )
             
             # 生成动画
@@ -463,5 +483,59 @@ class AnimationGeneratorApp:
             CTkMessagebox(
                 title="错误",
                 message="请拖入图片文件 (PNG/GIF/JPG)",
+                icon="cancel"
+            )
+
+    def load_section_data(self):
+        """加载分段数据"""
+        try:
+            data_file = os.path.join(os.getcwd(), "section_data.json")
+            if os.path.exists(data_file):
+                with open(data_file, 'r') as f:
+                    data = json.load(f)
+                    self.section_positions = data.get('positions')
+        except Exception as e:
+            print(f"加载分段数据失败：{e}")
+    
+    def save_section_data(self):
+        """保存分段数据"""
+        try:
+            data_file = os.path.join(os.getcwd(), "section_data.json")
+            with open(data_file, 'w') as f:
+                json.dump({
+                    'positions': self.section_positions
+                }, f)
+        except Exception as e:
+            print(f"保存分段数据失败：{e}")
+    
+    def edit_sections(self):
+        """打开分段编辑器"""
+        try:
+            section_count = int(self.entries["rotation_angle"].get())
+            if section_count <= 0:
+                raise ValueError("分段数必须大于0")
+            
+            # 如果存在之前的位置数据且长度匹配，使用它；否则创建新的
+            if self.section_positions and len(self.section_positions) == section_count:
+                initial_positions = self.section_positions
+            else:
+                initial_positions = [0] * section_count
+            
+            def on_save(positions):
+                self.section_positions = positions
+                self.save_section_data()  # 保存到文件
+            
+            editor = SectionEditorDialog(
+                self.root,
+                section_count=section_count,
+                on_save=on_save,
+                image_path=self.image_path,
+                initial_positions=initial_positions  # 传入初始位置
+            )
+            
+        except ValueError as e:
+            CTkMessagebox(
+                title="错误",
+                message=str(e),
                 icon="cancel"
             )

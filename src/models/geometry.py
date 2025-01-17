@@ -1,6 +1,14 @@
 class GeometryGenerator:
     @staticmethod
-    def create_section_geometry(texture_width, texture_height, frame_count, section_count):
+    def create_section_geometry(texture_width, texture_height, frame_count, section_count, positions=None):
+        """生成分段几何体
+        Args:
+            texture_width: 纹理宽度
+            texture_height: 纹理高度
+            frame_count: 帧数
+            section_count: 分段数
+            positions: 每个分段的Y轴偏移值（-1到1之间）
+        """
         geometry = {
             "format_version": "1.12.0",
             "minecraft:geometry": [
@@ -22,39 +30,51 @@ class GeometryGenerator:
                 }
             ]
         }
+
         section_width = texture_width / section_count
-        
-        origin = -8
-        j = 0
-        
+        section_size = 16 / section_count  # 每个分段的实际大小
+
+        # 创建分段骨骼
         for i in range(section_count):
-            bone = {
+            # 计算分段的基础位置
+            section_x = -8 + (section_size * i)  # 从模型左边缘开始
+            
+            # 计算Y轴偏移（BlockBench坐标系：向上为正，向下为负）
+            offset_y = 0
+            if positions and i < len(positions):
+                # 将-1到1的值映射到实际的像素偏移
+                # 注意：保持原始正负值，因为已经符合BlockBench坐标系
+                offset_y = positions[i] * 8  # 最大偏移为8个单位（128像素）
+            
+            # 创建主骨骼
+            main_bone = {
                 "name": f"main{i+1}",
-                "parent": f"main{i}",
-                "pivot": [0, 0, 0]
+                "parent": "main" if i == 0 else f"main{i}",
+                "pivot": [section_x, offset_y, 0]  # 枢轴点在分段左侧中心
             }
-            origin = -8 + (16 / section_count) * i
-            if i == 0:
-                bone["parent"] = "main"
-            geometry["minecraft:geometry"][0]["bones"].append(bone)
+            geometry["minecraft:geometry"][0]["bones"].append(main_bone)
+
+            # 为每一帧创建显示骨骼
             for j in range(frame_count):
-                bone1 = {
+                display_bone = {
                     "name": f"bone{i+1}-{j+1}",
                     "parent": f"main{i+1}",
-                    "pivot": [origin, 0, 0],
+                    "pivot": [section_x, offset_y, 0],  # 继承父骨骼的枢轴点
                     "cubes": [
                         {
-                            "origin": [origin, -8, 0],
-                            "size": [16/section_count, 16, 0],
+                            "origin": [section_x, -8, 0],  # 原点在左上角
+                            "size": [section_size, 16, 0],
                             "uv": {
-                                "north": {"uv": [section_width * i + texture_width * j, 0], "uv_size": [section_width, texture_height]}
+                                "north": {
+                                    "uv": [section_width * i + texture_width * j, 0],
+                                    "uv_size": [section_width, texture_height]
+                                }
                             }
                         }
                     ]
                 }
-                geometry["minecraft:geometry"][0]["bones"].append(bone1)
-            
-        
+                geometry["minecraft:geometry"][0]["bones"].append(display_bone)
+
         return geometry
     @staticmethod
     def create_normal_geometry(texture_width, texture_height, frame_count):
