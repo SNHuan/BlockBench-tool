@@ -20,11 +20,15 @@ wheels/
 .installed.cfg
 *.egg
 
+# PyInstaller
+build/
+dist/
+*.spec
+
 # Virtual Environment
 venv/
-ENV/
 env/
-.env/
+ENV/
 
 # IDE
 .idea/
@@ -33,19 +37,5 @@ env/
 *.swo
 
 # Project specific
-models/
-*.spec
-*.dll
-*.pyd
-*.exe
-
-# Windows
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-$RECYCLE.BIN/
-
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride 
+history/
+*.zip 

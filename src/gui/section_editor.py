@@ -94,22 +94,27 @@ class SectionEditorDialog:
             )
             slider.pack(side="left", padx=5)
             
-            # 数值显示
-            value_label = ctk.CTkLabel(
+            # 数值输入框
+            value_entry = ctk.CTkEntry(
                 slider_frame,
-                text="0",
-                width=30
+                width=50,
+                justify='center'
             )
-            value_label.pack(side="left", padx=5)
+            value_entry.pack(side="left", padx=5)
+            value_entry.insert(0, "0")  # 设置初始值
+            
+            # 绑定输入框事件 - 使用 KeyRelease 事件实现实时更新
+            value_entry.bind('<KeyRelease>', lambda e, idx=i: self.on_entry_change(idx))
             
             # 设置初始值
             initial_value = int(self.section_positions[i] * 100)  # 转换回界面值
             slider.set(initial_value)
-            value_label.configure(text=str(initial_value))
+            value_entry.delete(0, 'end')
+            value_entry.insert(0, str(initial_value))
             
             self.sliders.append({
                 'slider': slider,
-                'value_label': value_label
+                'value_entry': value_entry
             })
     
     def create_buttons(self, frame):
@@ -135,8 +140,9 @@ class SectionEditorDialog:
         """滑动条值改变时的回调"""
         # 将界面值（-100到100）转换为实际偏移值（-1到1）
         self.section_positions[index] = float(value) / 100
-        # 更新数值显示（显示界面值）
-        self.sliders[index]['value_label'].configure(text=f"{int(value)}")
+        # 更新数值显示
+        self.sliders[index]['value_entry'].delete(0, 'end')
+        self.sliders[index]['value_entry'].insert(0, f"{int(value)}")
         self.update_preview()
         
     def update_preview(self, event=None):
@@ -264,7 +270,8 @@ class SectionEditorDialog:
         """重置所有位置"""
         for i, slider_data in enumerate(self.sliders):
             slider_data['slider'].set(0)
-            slider_data['value_label'].configure(text="0")
+            slider_data['value_entry'].delete(0, 'end')
+            slider_data['value_entry'].insert(0, "0")
             self.section_positions[i] = 0
         self.update_preview()
         
@@ -273,3 +280,31 @@ class SectionEditorDialog:
         if self.on_save:
             self.on_save(self.section_positions)
         self.dialog.destroy() 
+
+    def on_entry_change(self, index, event=None):
+        """输入框值改变时的回调"""
+        try:
+            entry_text = self.sliders[index]['value_entry'].get()
+            # 处理空字符串或只有负号的情况
+            if not entry_text or entry_text == '-':
+                return
+            
+            # 获取输入值
+            value = int(entry_text)
+            # 限制范围
+            value = max(-100, min(100, value))
+            
+            # 如果值发生了变化，才更新
+            current_value = int(self.section_positions[index] * 100)
+            if value != current_value:
+                # 更新界面
+                self.sliders[index]['value_entry'].delete(0, 'end')
+                self.sliders[index]['value_entry'].insert(0, str(value))
+                self.sliders[index]['slider'].set(value)
+                # 更新数据
+                self.section_positions[index] = float(value) / 100
+                self.update_preview()
+            
+        except ValueError:
+            # 对于无效输入，不做处理，允许用户继续输入
+            pass 
