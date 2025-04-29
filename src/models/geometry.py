@@ -120,6 +120,289 @@ class GeometryGenerator:
             geometry["minecraft:geometry"][0]["bones"].append(bone)
         
         return geometry
+    @staticmethod
+    def create_conical_geometry(texture_width, texture_height, frame_count, texture_pow=1.8):
+        geometry = {
+                    "format_version": "1.12.0",
+                    "minecraft:geometry": [
+                        {
+                            "description": {
+                                "identifier": "geometry.unknown",
+                                "texture_width": texture_width * frame_count,
+                                "texture_height": texture_width,
+                                "visible_bounds_width": 3,
+                                "visible_bounds_height": 3,
+                                "visible_bounds_offset": [0, 0.5, 0]
+                            },
+                            "bones": [
+                                {
+                                    "name": "all",
+                                    "pivot": [0, -24, -1.98637]
+                                },
+                                
+                                    ]
+                                }
+                            ]
+		}
+
+        section_width = texture_width / 3
+        section_height = texture_height / 3
+
+        
+        for i in range(frame_count):
+            bone = {
+					"name": f"bone{i+1}",
+					"parent": "all",
+					"pivot": [0, -24, -1.98637],
+					"cubes": [
+						{
+							"origin": [-16, 14.39682, -44.18907],
+							"size": [32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-67.5, 0, 0],
+							"uv": {
+								"north": {"uv": [section_width+texture_width*i, 0], "uv_size": [section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [-16, -4.94964, -35.94471],
+							"size": [32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-45, 0, 0],
+							"uv": {
+								"north": {"uv": [section_width+texture_width*i, section_height/texture_pow], "uv_size": [section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [-16, -25.97842, -35.73149],
+							"size": [32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-22.5, 0, 0],
+							"uv": {
+								"north": {"uv": [section_width+texture_width*i, section_height/texture_pow*2], "uv_size": [section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [3.77162, 12.76879, -47.65083],
+							"size": [32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-69.31559, -16.1727, 16.83626],
+							"uv": {
+								"north": {"uv": [section_width*2+texture_width*i, 0], "uv_size": [section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [3.77162, -5.12898, -39.76599],
+							"size": [32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-46.81559, -16.1727, 16.83626],
+							"uv": {
+								"north": {"uv": [section_width*2+texture_width*i, section_height/texture_pow], "uv_size": [section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [3.77162, -24.68177, -39.33052],
+							"size": [32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-24.31559, -16.1727, 16.83626],
+							"uv": {
+								"north": {"uv": [section_width*2+texture_width*i, section_height/texture_pow*2], "uv_size": [section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [-3.77162, 12.76879, -47.65083],
+							"size": [-32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-69.31559, 16.1727, -16.83626],
+							"uv": {
+								"north": {"uv": [section_width+texture_width*i, 0], "uv_size": [-section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [-3.77162, -5.12898, -39.76599],
+							"size": [-32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-46.81559, 16.1727, -16.83626],
+							"uv": {
+								"north": {"uv": [section_width+texture_width*i, section_height/texture_pow], "uv_size": [-section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [-3.77162, -24.68177, -39.33052],
+							"size": [-32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-24.31559, 16.1727, -16.83626],
+							"uv": {
+								"north": {"uv": [section_width+texture_width*i, section_height/texture_pow*2], "uv_size": [-section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [-16, 14.39682, -44.18907],
+							"size": [32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-67.5, 0, 120],
+							"uv": {
+								"north": {"uv": [section_width+texture_width*i, 0], "uv_size": [section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [-16, -4.94964, -35.94471],
+							"size": [32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-45, 0, 120],
+							"uv": {
+								"north": {"uv": [section_width+texture_width*i, section_height/texture_pow], "uv_size": [section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [-16, -25.97842, -35.73149],
+							"size": [32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-22.5, 0, 120],
+							"uv": {
+								"north": {"uv": [section_width+texture_width*i, section_height/texture_pow*2], "uv_size": [section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [3.77162, -24.68177, -39.33052],
+							"size": [32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-24.31559, -16.1727, 136.83626],
+							"uv": {
+								"north": {"uv": [section_width*2+texture_width*i, section_height/texture_pow*2], "uv_size": [section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [3.77162, -5.12898, -39.76599],
+							"size": [32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-46.81559, -16.1727, 136.83626],
+							"uv": {
+								"north": {"uv": [section_width*2+texture_width*i, section_height/texture_pow], "uv_size": [section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [3.77162, 12.76879, -47.65083],
+							"size": [32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-69.31559, -16.1727, 136.83626],
+							"uv": {
+								"north": {"uv": [section_width*2+texture_width*i, 0], "uv_size": [section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [-3.77162, -24.68177, -39.33052],
+							"size": [-32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-24.31559, 16.1727, 103.16374],
+							"uv": {
+								"north": {"uv": [section_width+texture_width*i, section_height/texture_pow*2], "uv_size": [-section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [-3.77162, -5.12898, -39.76599],
+							"size": [-32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-46.81559, 16.1727, 103.16374],
+							"uv": {
+								"north": {"uv": [section_width+texture_width*i, section_height/texture_pow], "uv_size": [-section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [-3.77162, 12.76879, -47.65083],
+							"size": [-32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-69.31559, 16.1727, 103.16374],
+							"uv": {
+								"north": {"uv": [section_width+texture_width*i, 0], "uv_size": [-section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [-16, 14.39682, -44.18907],
+							"size": [32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-67.5, 0, -120],
+							"uv": {
+								"north": {"uv": [section_width+texture_width*i, 0], "uv_size": [section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [-16, -4.94964, -35.94471],
+							"size": [32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-45, 0, -120],
+							"uv": {
+								"north": {"uv": [section_width+texture_width*i, section_height/texture_pow], "uv_size": [section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [-16, -25.97842, -35.73149],
+							"size": [32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-22.5, 0, -120],
+							"uv": {
+								"north": {"uv": [section_width+texture_width*i, section_height/texture_pow*2], "uv_size": [section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [3.77162, -24.68177, -39.33052],
+							"size": [32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-24.31559, -16.1727, -103.16374],
+							"uv": {
+								"north": {"uv": [section_width*2+texture_width*i, section_height/texture_pow*2], "uv_size": [section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [3.77162, -5.12898, -39.76599],
+							"size": [32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-46.81559, -16.1727, -103.16374],
+							"uv": {
+								"north": {"uv": [section_width*2+texture_width*i, section_height/texture_pow], "uv_size": [section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [3.77162, 12.76879, -47.65083],
+							"size": [32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-69.31559, -16.1727, -103.16374],
+							"uv": {
+								"north": {"uv": [section_width*2+texture_width*i, 0], "uv_size": [section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [-3.77162, -24.68177, -39.33052],
+							"size": [-32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-24.31559, 16.1727, -136.83626],
+							"uv": {
+								"north": {"uv": [section_width+texture_width*i, section_height/texture_pow*2], "uv_size": [-section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [-3.77162, -5.12898, -39.76599],
+							"size": [-32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-46.81559, 16.1727, -136.83626],
+							"uv": {
+								"north": {"uv": [section_width+texture_width*i, section_height/texture_pow], "uv_size": [-section_width, section_height/texture_pow]}
+							}
+						},
+						{
+							"origin": [-3.77162, 12.76879, -47.65083],
+							"size": [-32, 32, 1.31399],
+							"pivot": [0, 0, -8.26007],
+							"rotation": [-69.31559, 16.1727, -136.83626],
+							"uv": {
+								"north": {"uv": [section_width+texture_width*i, 0], "uv_size": [-section_width, section_height/texture_pow]}
+							}
+						}
+                    ]
+            }
+            geometry["minecraft:geometry"][0]["bones"].append(bone)
+        
+        return geometry
 
     @staticmethod
     def create_circle_geometry(texture_width, texture_height, frame_count, rotation_angles):

@@ -31,6 +31,10 @@ class AnimationGenerator:
             bones_data = AnimationGenerator._create_circle_animation(
                 frame_count, frame_time, loop
             )
+        elif animation_type == "锥形动画":
+            bones_data = AnimationGenerator._create_conical_animation(
+                frame_count, frame_time, loop
+            )
         elif animation_type == "分段动画":
             bones_data = AnimationGenerator._create_section_animation(
                 frame_count, frame_time, loop, section_count
@@ -123,6 +127,53 @@ class AnimationGenerator:
                     "pre": [1, 1, 1],
                     "post": [0, 0, 0]
                 }
+
+            bones_data[bone_name] = bone_data
+
+        return bones_data
+
+    @staticmethod
+    def _create_conical_animation(frame_count, frame_time, loop):
+        """生成锥形动画的骨骼数据"""
+        bones_data = {}
+        
+        for i in range(frame_count):
+            bone_name = f"bone{i+1}"
+            current_time = i * frame_time
+            
+            # 所有骨骼的初始状态都是隐藏的
+            bone_data = {
+                "scale": {
+                    "0.0": {
+                        "pre": [0, 0, 0],
+                        "post": [0, 0, 0]
+                    }
+                }
+            }
+
+            # 第一帧特殊处理
+            if i == 0:
+                bone_data["scale"]["0.0"] = {
+                    "pre": [1, 1, 1],
+                    "post": [1, 1, 1]
+                }
+                if frame_count > 1:  # 如果有多帧，则在下一帧开始时隐藏
+                    bone_data["scale"][f"{frame_time:.3f}"] = {
+                        "pre": [1, 1, 1],
+                        "post": [0, 0, 0]
+                    }
+            else:
+                # 其他帧：从当前时间显示，到下一帧时隐藏
+                bone_data["scale"][f"{current_time:.3f}"] = {
+                    "pre": [0, 0, 0],
+                    "post": [1, 1, 1]
+                }
+                if i < frame_count - 1:  # 如果不是最后一帧
+                    next_time = (i + 1) * frame_time
+                    bone_data["scale"][f"{next_time:.3f}"] = {
+                        "pre": [1, 1, 1],
+                        "post": [0, 0, 0]
+                    }
 
             bones_data[bone_name] = bone_data
 

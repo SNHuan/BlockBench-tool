@@ -35,7 +35,19 @@ ENV/
 .vscode/
 *.swp
 *.swo
+.vs/
 
 # Project specific
 history/
-*.zip 
+*.zip
+/models/
+logs/
+*.log
+**/__pycache__/
+**/.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/ 

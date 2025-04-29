@@ -150,7 +150,7 @@ class AnimationGeneratorApp:
         
         self.animation_type = ctk.CTkSegmentedButton(
             type_frame,
-            values=["普通动画", "圆形动画", "分段动画"],
+            values=["普通动画", "圆形动画", "锥形动画", "分段动画"],
             command=self.on_animation_type_change
         )
         self.animation_type.pack(fill="x", padx=5, pady=5)
@@ -185,6 +185,18 @@ class AnimationGeneratorApp:
             variable=self.loop_var
         )
         self.loop_checkbox.pack(pady=5)
+        
+        # 纹理强度输入框（默认隐藏）
+        self.texture_pow_frame = ctk.CTkFrame(settings_frame)
+        self.texture_pow_label = ctk.CTkLabel(
+            self.texture_pow_frame,
+            text="纹理拉伸:"
+        )
+        self.texture_pow_label.pack(side="left", padx=5)
+        
+        self.entries["texture_pow"] = ctk.CTkEntry(self.texture_pow_frame)
+        self.entries["texture_pow"].insert(0, "1.8")
+        self.entries["texture_pow"].pack(side="right", fill="x", expand=True, padx=5)
 
     def create_right_panel(self):
         """创建右侧预览区域"""
@@ -313,15 +325,22 @@ class AnimationGeneratorApp:
             self.entries["rotation_angle"].insert(0, "360")
             self.rotation_frame.pack(fill="x", pady=2)
             self.section_frame.pack_forget()  # 隐藏分段编辑按钮
+            self.texture_pow_frame.pack_forget()  # 隐藏纹理强度
+        elif value == "锥形动画":
+            self.rotation_frame.pack_forget()
+            self.section_frame.pack_forget()
+            self.texture_pow_frame.pack(fill="x", pady=2)  # 显示纹理强度
         elif value == "分段动画":
             self.rotation_label.configure(text="分段数量:")
             self.entries["rotation_angle"].delete(0, "end")
             self.entries["rotation_angle"].insert(0, "8")
             self.rotation_frame.pack(fill="x", pady=2)
             self.section_frame.pack(fill="x", pady=2)  # 显示分段编辑按钮
+            self.texture_pow_frame.pack_forget()  # 隐藏纹理强度
         else:
             self.rotation_frame.pack_forget()
             self.section_frame.pack_forget()
+            self.texture_pow_frame.pack_forget()  # 隐藏纹理强度
 
     def on_canvas_resize(self, event):
         """画布大小改变时的回调"""
@@ -338,8 +357,19 @@ class AnimationGeneratorApp:
                 "frame_count": int(self.entries["frame_count"].get()),
                 "frame_time": float(self.entries["frame_time"].get()),
                 "animation_type": self.animation_type.get(),
-                "loop": self.loop_var.get()
+                "loop": self.loop_var.get(),
+                "texture_pow": 1.8  # 默认值
             }
+            
+            # 获取纹理强度参数（仅用于锥形动画）
+            if params["animation_type"] == "锥形动画":
+                try:
+                    texture_pow = float(self.entries["texture_pow"].get())
+                    if texture_pow <= 0:
+                        raise ValueError("纹理强度必须大于0")
+                    params["texture_pow"] = texture_pow
+                except ValueError:
+                    raise ValueError("请输入有效的纹理强度")
             
             # 验证参数
             if not params["texture_name"]:
@@ -395,6 +425,13 @@ class AnimationGeneratorApp:
                     params["texture_height"],
                     params["frame_count"],
                     value  # 旋转角度
+                )
+            elif params["animation_type"] == "锥形动画":
+                geometry = GeometryGenerator.create_conical_geometry(
+                    params["texture_width"],
+                    params["texture_height"],
+                    params["frame_count"],
+                    params["texture_pow"]
                 )
             else:  # 分段动画
                 geometry = GeometryGenerator.create_section_geometry(
